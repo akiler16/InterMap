@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель Учня — Контурні карти</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="main-header">
+        <div class="header-container">
+            <h1>Contour Map App — Учень</h1>
+            <nav class="nav-links">
+                <a href="index.html">Головна</a>
+                <a href="teacher.html">Вчитель</a>
+                <a href="student.html" class="active">Учень</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- Блок введення коду (якщо учень зайшов без параметрів у посиланні) -->
+        <section id="codeLoaderSection" class="card-section center-content">
+            <h2>🔑 Введіть код тесту</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">Вкажіть 10-значний код, отриманий від вчителя:</p>
+            <div style="display: flex; gap: 10px; max-width: 400px; margin: 0 auto;">
+                <input type="text" id="studentCodeInput" placeholder="Наприклад: aX7k9P2mL0" maxlength="10" style="font-family: monospace; font-weight: bold; text-align: center;">
+                <button id="loadTestBtn" class="btn primary-btn">Завантажити</button>
+            </div>
+        </section>
+
+        <!-- Основний блок проходження тесту (прихований до завантаження) -->
+        <div id="testArea" style="display: none;">
+            <!-- Інформація про тест -->
+            <section class="card-section">
+                <h2 id="displayTestTitle">Назва тесту</h2>
+                <div class="form-group" style="max-width: 400px; margin-top: 15px;">
+                    <label for="studentName">Ваше Ім'я та Прізвище:</label>
+                    <input type="text" id="studentName" placeholder="Наприклад: Іван Іванов, 8-А">
+                </div>
+            </section>
+
+            <!-- Карта та Canvas для дій учня -->
+            <section class="card-section">
+                <h3>Карта завдань</h3>
+                <div class="instruction-text" id="studentInstruction">
+                    👉 Оберіть завдання зі списку праворуч або нижче та виконайте його на карті.
+                </div>
+
+                <div class="map-preview-wrapper" style="text-align: center;">
+                    <div id="studentMapContainer" class="map-container">
+                        <img id="studentMapImage" src="" alt="Контурна карта" style="max-width: 100%; display: block;">
+                        <canvas id="studentCanvas"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Список завдань для виконання -->
+            <section class="card-section">
+                <h3>Список завдань</h3>
+                <div id="studentTasksContainer" class="tasks-list">
+                    <!-- Завдання динамічно генеруються через JS -->
+                </div>
+
+                <div style="margin-top: 25px; text-align: center;">
+                    <button id="submitWorkBtn" class="btn success-btn" style="padding: 12px 30px; font-size: 1.1rem;">
+                        🚀 Здати роботу на перевірку
+                    </button>
+                </div>
+            </section>
+
+            <!-- Результати перевірки -->
+            <section id="resultsSection" class="card-section" style="display: none; background: #e8f5e9; border: 2px solid #2e7d32;">
+                <h2>📊 Результат перевірки</h2>
+                <div id="scoreSummary" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 15px; color: #1b5e20;"></div>
+                <pre id="detailedReport" style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #c8e6c9; font-family: sans-serif; white-space: pre-wrap;"></pre>
+            </section>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <p>&copy; 2026 Contour Map App.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
