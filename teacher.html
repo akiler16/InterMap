@@ -3,94 +3,137 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель Вчителя - Контурна карта</title>
+    <title>Панель Вчителя — Контурні карти</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header class="main-header">
-        <div class="header-container">
-            <h1>Contour Map App</h1>
-            <nav class="nav-links">
-                <a href="index.html">Головна</a>
-                <a href="teacher.html" class="active">Вчитель</a>
-                <a href="student.html">Учень</a>
-            </nav>
+    <!-- Модальне вікно авторизації вчителя -->
+    <div id="authModal" class="modal-overlay">
+        <div class="auth-card">
+            <h2>🔐 Вхід до панелі викладача</h2>
+            <p>Введіть пароль для доступу до редагування карт:</p>
+            <form id="teacherLoginForm" onsubmit="return false;">
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label for="teacherPasswordInput" style="display: block; text-align: left; font-weight: bold; margin-bottom: 5px;">Пароль:</label>
+                    <input type="password" id="teacherPasswordInput" placeholder="Початковий пароль: admin" required style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #ccc;">
+                </div>
+                <button type="submit" id="loginBtn" class="btn primary-btn" style="width: 100%;">Увійти</button>
+            </form>
         </div>
-    </header>
+    </div>
 
-    <main class="dashboard-container">
-        <h2>Панель керування викладача</h2>
+    <!-- Основний контент (прихований до введення вірного пароля) -->
+    <div id="teacherContent" style="display: none;">
+        <header class="main-header">
+            <div class="header-container">
+                <h1>Contour Map App — Teacher Dashboard</h1>
+                <nav class="nav-links">
+                    <a href="index.html">Головна</a>
+                    <a href="teacher.html" class="active">Вчитель</a>
+                    <a href="student.html">Учень</a>
+                    <button id="changePassBtn" class="btn secondary-btn" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;">Змінити пароль</button>
+                </nav>
+            </div>
+        </header>
 
-        <!-- Налаштування карти -->
-        <section class="card-section">
-            <h3>1. Налаштування карти та звітності</h3>
-            <div class="form-group">
-                <label for="teacherEmail">Email вчителя:</label>
-                <input type="email" id="teacherEmail" placeholder="teacher@school.ua">
-            </div>
-            <div class="form-group">
-                <label for="mapImage">Завантажити контурну карту (зображення):</label>
-                <input type="file" id="mapImage" accept="image/*">
-            </div>
-            
-            <div id="teacherMapWrapper" class="map-preview-wrapper" style="display: none;">
-                <p class="instruction-text" style="color: #007BFF; font-weight: bold;">📍 Натисніть на карту нижче, щоб вказати правильну відповідь (еталон) для поточного завдання:</p>
-                <div id="teacherMapContainer" class="map-container" style="position: relative; display: inline-block;">
-                    <img id="mapImagePreview" src="" alt="Контурна карта" style="max-width: 100%; display: block; cursor: crosshair;">
-                </div>
-            </div>
-        </section>
+        <main class="dashboard-container">
+            <h2>Конструктор інтерактивних контурних карт</h2>
 
-        <!-- Додавання завдання -->
-        <section class="card-section" id="taskSection" style="display: none;">
-            <h3>2. Додати завдання</h3>
-            <div class="form-row">
+            <!-- Крок 1: Завантаження карти та Налаштування -->
+            <section class="card-section">
+                <h3>1. Налаштування теми та завантаження карти</h3>
                 <div class="form-group">
-                    <label for="taskType">Тип:</label>
-                    <select id="taskType">
-                        <option value="marker">Поставити мітку</option>
-                    </select>
+                    <label for="testTitle">Назва тесту / роботи:</label>
+                    <input type="text" id="testTitle" placeholder="Наприклад: Фізична карта України. 8 клас">
                 </div>
                 <div class="form-group">
-                    <label for="taskPointsPlus">Бали (+):</label>
-                    <input type="number" id="taskPointsPlus" value="5" min="1">
+                    <label for="teacherEmail">Email для сповіщень та звітів:</label>
+                    <input type="email" id="teacherEmail" placeholder="teacher@school.ua">
                 </div>
                 <div class="form-group">
-                    <label for="taskPointsMinus">Штраф (-):</label>
-                    <input type="number" id="taskPointsMinus" value="2" min="0">
+                    <label for="mapImage">Завантажити файл контурної карти (зображення):</label>
+                    <input type="file" id="mapImage" accept="image/*">
                 </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="taskText">Текст завдання:</label>
-                <input type="text" id="taskText" placeholder="Наприклад: Позначте Київ">
-            </div>
-            
-            <button id="addTask" class="btn primary-btn">Зберегти завдання</button>
-        </section>
+                
+                <div id="teacherMapWrapper" class="map-preview-wrapper" style="display: none;">
+                    <div class="instruction-text" id="mapInstruction">
+                        📍 <b>Режим позначення:</b> Оберіть тип завдання нижче та вкажіть еталонну область на карті.
+                    </div>
+                    <div id="teacherMapContainer" class="map-container">
+                        <img id="mapImagePreview" src="" alt="Контурна карта" style="max-width: 100%; display: block; cursor: crosshair;">
+                        <canvas id="teacherCanvas"></canvas>
+                    </div>
+                </div>
+            </section>
 
-        <!-- Список завдань -->
-        <section class="card-section">
-            <h3>Створені завдання</h3>
-            <ul id="teacherTasksList" class="tasks-list">
-                <p class="empty-text">Ще немає доданих завдань.</p>
-            </ul>
-        </section>
+            <!-- Крок 2: Конструктор завдань -->
+            <section class="card-section" id="taskSection" style="display: none;">
+                <h3>2. Конструктор завдань</h3>
+                <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label for="taskType">Тип завдання:</label>
+                        <select id="taskType" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc;">
+                            <option value="marker">📌 Поставити мітку (Точка)</option>
+                            <option value="donut">🍩 Обвести область (Пончик: зовнішня та внутрішня межа)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="taskPointsPlus">Бали за правильну (+):</label>
+                        <input type="number" id="taskPointsPlus" value="5" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="taskPointsMinus">Штраф за помилку (-):</label>
+                        <input type="number" id="taskPointsMinus" value="2" min="0">
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label for="taskText">Текст завдання для учнів:</label>
+                    <input type="text" id="taskText" placeholder="Наприклад: Обведіть акваторію Кременчуцького водосховища">
+                </div>
+                
+                <button id="addTask" class="btn primary-btn">Зберегти завдання до тесту</button>
+            </section>
 
-        <!-- Генерація посилання -->
-        <section class="card-section center-content">
-            <h3>3. Готово до роботи</h3>
-            <button id="generateStudentLink" class="btn success-btn">Згенерувати посилання для учня</button>
-            <div id="shareLinkContainer" class="link-output" style="display: none; margin-top: 15px;">
-                <p>Посилання для учнів:</p>
-                <input type="text" id="studentLinkInput" readonly style="background: #e9ecef;">
-            </div>
-        </section>
-    </main>
+            <!-- Список доданих завдань поточного тесту -->
+            <section class="card-section">
+                <h3>Завдання у поточному тесті</h3>
+                <ul id="teacherTasksList" class="tasks-list">
+                    <p class="empty-text">Ще немає доданих завдань. Завантажте карту та додайте перше завдання.</p>
+                </ul>
+            </section>
 
-    <footer class="main-footer">
-        <p>&copy; 2026 Contour Map App.</p>
-    </footer>
+            <!-- Публікація та генерація унікального посилання -->
+            <section class="card-section center-content">
+                <h3>3. Публікація та генерація коду</h3>
+                <button id="generateStudentLink" class="btn success-btn" style="padding: 12px 25px; font-size: 1.05rem;">
+                    ☁️ Опублікувати тест у хмару та згенерувати посилання
+                </button>
+                
+                <div id="shareLinkContainer" class="link-output" style="display: none; margin-top: 20px;">
+                    <p><b>Згенероване унікальне посилання (Код з 10 символів):</b></p>
+                    <div style="display: flex; gap: 10px; max-width: 600px; margin: 10px auto;">
+                        <input type="text" id="studentLinkInput" readonly style="background: #e9ecef; font-weight: bold; font-family: monospace; text-align: center;">
+                        <button id="copyLinkBtn" class="btn primary-btn">Скопіювати</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Історія створених тестів -->
+            <section class="card-section">
+                <h3>📜 Історія створених тестів</h3>
+                <div id="historyContainer">
+                    <ul id="historyList" class="tasks-list">
+                        <p class="empty-text">Історія порожня.</p>
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <footer class="main-footer">
+            <p>&copy; 2026 Contour Map App.</p>
+        </footer>
+    </div>
 
     <script src="script.js"></script>
 </body>
