@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Виконання завдань - Учень</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="main-header">
+        <div class="header-container">
+            <h1>Contour Map App</h1>
+            <nav class="nav-links">
+                <a href="index.html">Головна</a>
+                <a href="teacher.html">Вчитель</a>
+                <a href="student.html" class="active">Учень</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="student-main-container">
+        <!-- Форма входу учня -->
+        <div id="loginScreen" class="auth-card">
+            <h2>Вхід до виконання завдань</h2>
+            <p>Введіть ваше ПІБ для початку роботи:</p>
+            <form id="studentForm">
+                <div class="form-group">
+                    <label for="name">Прізвище та Ім'я:</label>
+                    <input type="text" id="name" placeholder="Шевченко Тарас" required>
+                </div>
+                <button type="submit" class="btn primary-btn" style="width: 100%;">Розпочати тест</button>
+            </form>
+        </div>
+
+        <!-- Робоча зона учня -->
+        <div id="studentContent" class="test-layout" style="display: none;">
+            <aside class="sidebar">
+                <h3>Завдання</h3>
+                <ul id="taskList" class="tasks-list"></ul>
+                <button id="submitTestBtn" class="btn success-btn" style="width: 100%; margin-top: 20px;">Здати роботу</button>
+            </aside>
+
+            <section class="workspace">
+                <div class="tools-panel">
+                    <span class="tools-title">📌 Перетягніть мітку з номерком на відповідне місце карти:</span>
+                    <div id="markersToolsContainer" class="markers-toolbar"></div>
+                </div>
+
+                <div id="studentMapContainer" class="map-container" style="position: relative; overflow: auto; flex: 1; display: flex; justify-content: center; align-items: center;">
+                    <img id="mapImage" src="" alt="Контурна карта" style="max-width: 100%; display: block; user-select: none;">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <p>&copy; 2026 Contour Map App.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
