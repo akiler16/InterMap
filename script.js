@@ -72,8 +72,11 @@ function initTeacherAuth() {
             const today = new Date().toISOString().split('T')[0];
 
             try {
-                const db = window.fbDB; // Або ініціалізований db
-                const snapshot = await window.fbGet(window.fbRef(db, `licenses/${key}`));
+                // ТАК МАЄ БУТИ:
+                const db = getDatabase(); // Отримуємо базу даних (якщо ініціалізовано додаток)
+                const licenseRef = ref(db, `licenses/${key}`); // Створюємо посилання
+                const snapshot = await get(licenseRef); // Робимо запит
+
 
                 if (!snapshot.exists()) {
                     alert("Вибачте, але у вас нема ключа / невірно введено.");
@@ -99,7 +102,7 @@ function initTeacherAuth() {
 
                 if (!lic.boundDeviceId) {
                     // Перша активація на цьому пристрої
-                    await window.fbUpdate(window.fbRef(db, `licenses/${key}`), { boundDeviceId: deviceId });
+                    await update(licenseRef, { boundDeviceId: deviceId });
                 } else if (lic.boundDeviceId !== deviceId) {
                     alert("Вибачте, але цей ключ вже прив'язаний до іншого пристрою.");
                     return;
