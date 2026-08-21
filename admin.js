@@ -1,20 +1,31 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
+// Ваша конфігурація Firebase
 const firebaseConfig = {
-    databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app/" // Замініть на свій Realtime Database URL
+    apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
+    authDomain: "intermap-app.firebaseapp.com",
+    databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "intermap-app",
+    storageBucket: "intermap-app.firebasestorage.app",
+    messagingSenderId: "869707502446",
+    appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f",
+    measurementId: "G-QB0SF133NB"
 };
 
+// Ініціалізація
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // Перемикання вкладок
-window.switchTab = (tabName) => {
+window.switchTab = (tabName, event) => {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
     
     document.getElementById(`tab-${tabName}`).classList.add('active');
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -27,15 +38,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('siteAnnouncementForm').addEventListener('submit', saveSiteAnnouncement);
 });
 
-// 1. DRM / Ліцензії
+// 1. Управління ключами (DRM)
 async function loadLicenses() {
     const tbody = document.getElementById('licensesTableBody');
-    tbody.innerHTML = '<tr><td colspan="7" class="loading">Завантаження даних...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="loading">Завантаження даних з БД...</td></tr>';
 
     try {
         const snapshot = await get(ref(db, 'licenses'));
         if (!snapshot.exists()) {
-            tbody.innerHTML = '<tr><td colspan="7">Ключів немає.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7">Ключів немає. Створіть перший вище!</td></tr>';
             updateStats(0, 0, 0);
             return;
         }
@@ -68,33 +79,38 @@ async function loadLicenses() {
 
         updateStats(total, active, bound);
     } catch (e) {
-        console.error(e);
-        tbody.innerHTML = '<tr><td colspan="7" style="color:red;">Помилка завантаження.</td></tr>';
+        console.error("Firebase Read Error:", e);
+        tbody.innerHTML = `<tr><td colspan="7" style="color:red;">Помилка доступу до БД. Перевірте Rules у Firebase Console.</td></tr>`;
     }
 }
 
 async function handleCreateLicense(e) {
     e.preventDefault();
     const key = document.getElementById('licKey').value.trim().toUpperCase();
-    await set(ref(db, `licenses/${key}`), {
-        password: document.getElementById('licPass').value.trim(),
-        owner: document.getElementById('licOwner').value.trim(),
-        validFrom: document.getElementById('licValidFrom').value,
-        validTo: document.getElementById('licValidTo').value,
-        active: true,
-        boundDeviceId: null,
-        createdAt: new Date().toISOString()
-    });
-    alert(`✅ Ключ ${key} збережено!`);
-    document.getElementById('createLicenseForm').reset();
-    loadLicenses();
+    
+    try {
+        await set(ref(db, `licenses/${key}`), {
+            password: document.getElementById('licPass').value.trim(),
+            owner: document.getElementById('licOwner').value.trim(),
+            validFrom: document.getElementById('licValidFrom').value,
+            validTo: document.getElementById('licValidTo').value,
+            active: true,
+            boundDeviceId: null,
+            createdAt: new Date().toISOString()
+        });
+        alert(`✅ Ключ ${key} успішно додано в базу!`);
+        document.getElementById('createLicenseForm').reset();
+        loadLicenses();
+    } catch (err) {
+        alert("Помилка запису в базу: " + err.message);
+    }
 }
 
 window.toggleActive = async (key, newState) => { await update(ref(db, `licenses/${key}`), { active: newState }); loadLicenses(); };
-window.resetHwid = async (key) => { if (confirm("Скинути пристрій?")) { await update(ref(db, `licenses/${key}`), { boundDeviceId: null }); loadLicenses(); }};
-window.deleteKey = async (key) => { if (confirm("Видалити ключ?")) { await remove(ref(db, `licenses/${key}`)); loadLicenses(); }};
+window.resetHwid = async (key) => { if (confirm("Скинути прив'язку пристрою?")) { await update(ref(db, `licenses/${key}`), { boundDeviceId: null }); loadLicenses(); }};
+window.deleteKey = async (key) => { if (confirm("Видалити ключ з бази?")) { await remove(ref(db, `licenses/${key}`)); loadLicenses(); }};
 
-// 2. Глобальні налаштування сайту
+// 2. Налаштування сайту
 async function loadSiteSettings() {
     try {
         const snap = await get(ref(db, 'settings'));
@@ -121,7 +137,7 @@ async function saveSiteAnnouncement(e) {
     alert("✅ Налаштування сайту збережено!");
 }
 
-// 3. Аналітика
+// 3. Статистика
 function updateStats(total, active, bound) {
     document.getElementById('statTotalKeys').innerText = total;
     document.getElementById('statActiveKeys').innerText = active;
