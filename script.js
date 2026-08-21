@@ -1,17 +1,31 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ==========================================
-// 1. ГЛОБАЛЬНИЙ СТАН ТА КОНФІГУРАЦІЯ
+// 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН
 // ==========================================
 
-const DEFAULT_PASSWORD = 'admin';
-let teacherPassword = localStorage.getItem('teacherPassword') || DEFAULT_PASSWORD;
+const firebaseConfig = {
+    apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
+    authDomain: "intermap-app.firebaseapp.com",
+    databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "intermap-app",
+    storageBucket: "intermap-app.firebasestorage.app",
+    messagingSenderId: "869707502446",
+    appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f"
+};
+
+// Ініціалізація Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 // Telegram Bot Configuration
 const BOT_TOKEN = "8847524737:AAEUqbQzjtstH7uzvHSx0Dpx4B9G_HbFM2g";
 
-// Стан тесту вчителя
+// Стан пароля та тесту вчителя
+const DEFAULT_PASSWORD = 'admin';
+let teacherPassword = localStorage.getItem('teacherPassword') || DEFAULT_PASSWORD;
+
 let currentTest = {
     id: null,
     title: '',
@@ -24,7 +38,7 @@ let currentTest = {
 let currentTaskType = 'marker'; // 'marker', 'multi-marker', 'donut'
 let currentStandardPoint = null;
 let multiMarkers = []; // Масив для кількох міток (2+)
-let useRedZone = false; // Чи ввімкнено червону зону для пончика
+let useRedZone = false; // Червона зона для пончика
 let donutOuterPolygon = [];
 let donutInnerPolygon = [];
 let currentDrawingMode = 'outer'; // 'outer' або 'inner'
@@ -39,17 +53,28 @@ let isStudentDrawing = false;
 let currentStudentPolygon = [];
 
 // ==========================================
-// 2. ІНІЦІАЛІЗАЦІЯ
+// 2. УТИЛІТИТА ІНІЦІАЛІЗАЦІЯ
 // ==========================================
+
+// Генератор/зчитувач унікального ідентифікатора пристрою (HWID)
+function getDeviceId() {
+    let deviceId = localStorage.getItem('intermap_hwid');
+    if (!deviceId) {
+        const rawId = `${navigator.userAgent}-${screen.width}x${screen.height}-${Math.random().toString(36).substring(2)}`;
+        deviceId = 'DEV-' + btoa(rawId).replace(/=/g, '').substring(0, 24);
+        localStorage.setItem('intermap_hwid', deviceId);
+    }
+    return deviceId;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     initTeacherAuth();
-    initTeacherPanel();
-    initStudentPanel();
+    if (typeof initTeacherPanel === 'function') initTeacherPanel();
+    if (typeof initStudentPanel === 'function') initStudentPanel();
 });
 
 // ==========================================
-// 3. АВТОРИЗАЦІЯ ВЧИТЕЛЯ (ПАРОЛЬ)
+// 3. АВТОРИЗАЦІЯ ВЧИТЕЛЯ (ЛИЦЕНЗІЯ + HWID)
 // ==========================================
 
 function initTeacherAuth() {
@@ -57,6 +82,7 @@ function initTeacherAuth() {
     const teacherContent = document.getElementById('teacherContent');
     const loginForm = document.getElementById('teacherLoginForm');
 
+    // Перевірка активної сесії
     if (sessionStorage.getItem('intermap_teacher_authed') === 'true') {
         if (authModal) authModal.style.display = 'none';
         if (teacherContent) teacherContent.style.display = 'block';
@@ -66,69 +92,60 @@ function initTeacherAuth() {
     if (loginForm) {
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+
             const key = document.getElementById('teacherLicenseInput').value.trim().toUpperCase();
             const pass = document.getElementById('teacherPasswordInput').value.trim();
             const deviceId = getDeviceId();
             const today = new Date().toISOString().split('T')[0];
 
             try {
-                // ТАК МАЄ БУТИ:
-                const db = getDatabase(); // Отримуємо базу даних (якщо ініціалізовано додаток)
-                const licenseRef = ref(db, `licenses/${key}`); // Створюємо посилання
-                const snapshot = await get(licenseRef); // Робимо запит
-
+                // Перевірка ключа ліцензії у Realtime Database
+                const licenseRef = ref(db, `licenses/${key}`);
+                const snapshot = await get(licenseRef);
 
                 if (!snapshot.exists()) {
-                    alert("Вибачте, але у вас нема ключа / невірно введено.");
+                    alert("❌ Ключ не знайдено! Перевірте правильність вводу.");
                     return;
                 }
 
                 const lic = snapshot.val();
 
                 if (lic.password !== pass) {
-                    alert("Невірний пароль!");
+                    alert("❌ Невірний пароль!");
                     return;
                 }
 
                 if (!lic.active) {
-                    alert("Вибачте, але доступ заблоковано адміністратором.");
+                    alert("🚫 Цей ключ заблоковано адміністратором.");
                     return;
                 }
 
                 if (today < lic.validFrom || today > lic.validTo) {
-                    alert("Вибачте, але у вас вийшов термін придатності ключа.");
+                    alert(`⏳ Термін дії ключа закінчився (${lic.validTo})`);
                     return;
                 }
 
                 if (!lic.boundDeviceId) {
-                    // Перша активація на цьому пристрої
+                    // Прив me-язуємо новий пристрій при першому вході
                     await update(licenseRef, { boundDeviceId: deviceId });
                 } else if (lic.boundDeviceId !== deviceId) {
-                    alert("Вибачте, але цей ключ вже прив'язаний до іншого пристрою.");
+                    alert("📱 Цей ключ вже активовано на іншому пристрої!");
                     return;
                 }
 
-                // Вхід успішний
+                // Успішна авторизація
                 sessionStorage.setItem('intermap_teacher_authed', 'true');
-                authModal.style.display = 'none';
-                teacherContent.style.display = 'block';
+                if (authModal) authModal.style.display = 'none';
+                if (teacherContent) teacherContent.style.display = 'block';
+                
+                alert(`Ласкаво просимо, ${lic.owner || 'Вчитель'}!`);
 
             } catch (err) {
-                console.error(err);
-                alert("Помилка перевірки ліцензії через сервер.");
+                console.error("Помилка автентифікації:", err);
+                alert("Помилка з'єднання з базою даних.");
             }
         });
     }
-}
-
-function getDeviceId() {
-    let deviceId = localStorage.getItem('intermap_hwid');
-    if (!deviceId) {
-        const rawId = `${navigator.userAgent}-${screen.width}x${screen.height}-${Math.random().toString(36).substring(2)}`;
-        deviceId = 'DEV-' + btoa(rawId).replace(/=/g, '').substring(0, 24);
-        localStorage.setItem('intermap_hwid', deviceId);
-    }
-    return deviceId;
 }
 
 // ==========================================
