@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intermap — Головна Адмін-панель</title>
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <div class="admin-wrapper">
+        <!-- Бокове меню (Sidebar) -->
+        <aside class="sidebar">
+            <div class="logo">⚙️ Intermap Admin</div>
+            <nav class="nav-menu">
+                <button class="nav-btn active" onclick="switchTab('licenses')">🛡️ Ліцензії & DRM</button>
+                <button class="nav-btn" onclick="switchTab('settings')">⚙️ Налаштування Сайту</button>
+                <button class="nav-btn" onclick="switchTab('maps')">🗺️ Карти та Завдання</button>
+                <button class="nav-btn" onclick="switchTab('stats')">📊 Статистика</button>
+            </nav>
+            <a href="index.html" class="exit-btn">🚪 Вийти на головну</a>
+        </aside>
+
+        <!-- Основний контент -->
+        <main class="main-content">
+
+            <!-- Вкладка 1: Управління ліцензіями -->
+            <section id="tab-licenses" class="tab-content active">
+                <h1>🛡️ Управління Ліцензійними Ключами</h1>
+                
+                <div class="card">
+                    <h2>➕ Створити / Оновити Ключ</h2>
+                    <form id="createLicenseForm">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Ключ ліцензії:</label>
+                                <input type="text" id="licKey" placeholder="GEO-2026-X89K" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Пароль вчителя:</label>
+                                <input type="text" id="licPass" placeholder="teacher_pass" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Власник (ПІБ / Школа):</label>
+                                <input type="text" id="licOwner" placeholder="Учитель Географії 7-А" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Дійсний З:</label>
+                                <input type="date" id="licValidFrom" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Дійсний ДО:</label>
+                                <input type="date" id="licValidTo" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn primary-btn">Зберегти Ліцензію</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <div class="header-flex">
+                        <h2>📋 База Ключів</h2>
+                        <button id="refreshKeysBtn" class="btn secondary-btn">🔄 Оновити</button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Ключ</th>
+                                    <th>Власник</th>
+                                    <th>Пароль</th>
+                                    <th>Термін дії</th>
+                                    <th>Статус</th>
+                                    <th>Прив'язка HWID</th>
+                                    <th>Дії</th>
+                                </tr>
+                            </thead>
+                            <tbody id="licensesTableBody">
+                                <tr><td colspan="7" class="loading">Завантаження...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Вкладка 2: Налаштування сайту -->
+            <section id="tab-settings" class="tab-content">
+                <h1>⚙️ Глобальні Налаштування Сайту</h1>
+                
+                <div class="card">
+                    <h2>🚨 Системні режими</h2>
+                    <div class="setting-item">
+                        <div>
+                            <strong>Режим технічного обслуговування (Maintenance Mode)</strong>
+                            <p class="sub-text">Блокує доступ для учнів та вчителів на час оновлень.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="maintenanceToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>📢 Оголошення на головній сторінці</h2>
+                    <form id="siteAnnouncementForm">
+                        <div class="form-group">
+                            <label>Заголовок сайту:</label>
+                            <input type="text" id="siteTitleInput" placeholder="Intermap — Інтерактивні Карти">
+                        </div>
+                        <div class="form-group" style="margin-top: 1rem;">
+                            <label>Повідомлення для користувачів (Banner):</label>
+                            <textarea id="siteNoticeInput" rows="3" placeholder="Наприклад: 1 вересня оновлення нових контурних карт!"></textarea>
+                        </div>
+                        <button type="submit" class="btn primary-btn" style="margin-top: 1rem;">Оновити контент</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Вкладка 3: Карти та Завдання -->
+            <section id="tab-maps" class="tab-content">
+                <h1>🗺️ Управління Модулями Карт</h1>
+                <div class="card">
+                    <h2>📌 Доступні карти для учнів</h2>
+                    <div id="mapsControlList">
+                        <div class="setting-item">
+                            <span>🗺️ Контурна карта України (7 Клас)</span>
+                            <button class="btn secondary-btn" onclick="toggleMapStatus('ukraine_7')">Увімкнена</button>
+                        </div>
+                        <div class="setting-item">
+                            <span>🌍 Фізична карта світу</span>
+                            <button class="btn secondary-btn" onclick="toggleMapStatus('world_phys')">Увімкнена</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Вкладка 4: Статистика -->
+            <section id="tab-stats" class="tab-content">
+                <h1>📊 Аналітика системи</h1>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="statTotalKeys">0</div>
+                        <div class="stat-label">Всього ключі</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="statActiveKeys">0</div>
+                        <div class="stat-label">Активних ліцензій</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="statBoundDevices">0</div>
+                        <div class="stat-label">Активованих пристроїв</div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script type="module" src="admin.js"></script>
+</body>
+</html>
