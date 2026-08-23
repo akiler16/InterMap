@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, get, set, remove, push, child, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ==========================================
 // 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН
@@ -52,11 +52,17 @@ let studentAnswers = {}; // { taskIndex: point | arrayPoints | polygonArray }
 let isStudentDrawing = false;
 let currentStudentPolygon = [];
 
+// Робимо функції доступними у глобальній області (для inline onclick в HTML)
+window.removeTeacherTask = removeTeacherTask;
+window.copyCodeLink = copyCodeLink;
+window.deleteTest = deleteTest;
+window.selectTaskForStudent = selectTaskForStudent;
+window.fetchMyChatId = fetchMyChatId;
+
 // ==========================================
-// 2. УТИЛІТИТА ІНІЦІАЛІЗАЦІЯ
+// 2. УТИЛІТИ ТА ІНІЦІАЛІЗАЦІЯ
 // ==========================================
 
-// Генератор/зчитувач унікального ідентифікатора пристрою (HWID)
 function getDeviceId() {
     let deviceId = localStorage.getItem('intermap_hwid');
     if (!deviceId) {
@@ -74,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================
-// 3. АВТОРИЗАЦІЯ ВЧИТЕЛЯ (ЛИЦЕНЗІЯ + HWID)
+// 3. АВТОРИЗАЦІЯ ВЧИТЕЛЯ (ЛІЦЕНЗІЯ + HWID)
 // ==========================================
 
 function initTeacherAuth() {
@@ -82,7 +88,6 @@ function initTeacherAuth() {
     const teacherContent = document.getElementById('teacherContent');
     const loginForm = document.getElementById('teacherLoginForm');
 
-    // Перевірка активної сесії
     if (sessionStorage.getItem('intermap_teacher_authed') === 'true') {
         if (authModal) authModal.style.display = 'none';
         if (teacherContent) teacherContent.style.display = 'block';
@@ -99,7 +104,6 @@ function initTeacherAuth() {
             const today = new Date().toISOString().split('T')[0];
 
             try {
-                // Перевірка ключа ліцензії у Realtime Database
                 const licenseRef = ref(db, `licenses/${key}`);
                 const snapshot = await get(licenseRef);
 
@@ -126,14 +130,12 @@ function initTeacherAuth() {
                 }
 
                 if (!lic.boundDeviceId) {
-                    // Прив me-язуємо новий пристрій при першому вході
                     await update(licenseRef, { boundDeviceId: deviceId });
                 } else if (lic.boundDeviceId !== deviceId) {
                     alert("📱 Цей ключ вже активовано на іншому пристрої!");
                     return;
                 }
 
-                // Успішна авторизація
                 sessionStorage.setItem('intermap_teacher_authed', 'true');
                 if (authModal) authModal.style.display = 'none';
                 if (teacherContent) teacherContent.style.display = 'block';
@@ -152,7 +154,6 @@ function initTeacherAuth() {
 // 4. ПАНЕЛЬ ВЧИТЕЛЯ ТА TELEGRAM API
 // ==========================================
 
-// Автоматичне отримання Chat ID через Telegram API (getUpdates)
 async function fetchMyChatId() {
     const input = document.getElementById('teacherChatId');
     const btn = document.getElementById('getChatIdBtn');
@@ -313,10 +314,8 @@ function initTeacherPanel() {
             currentTest.telegramChatId = telegramChatId;
             currentTest.createdAt = new Date().toLocaleString('uk-UA');
 
-            // Збереження в FIREBASE REALTIME DATABASE
             await saveTestToFirebase(code, currentTest);
 
-            // Локальна історія
             let testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
             testsHistory[code] = currentTest;
             localStorage.setItem('testsHistory', JSON.stringify(testsHistory));
@@ -340,6 +339,8 @@ function initTeacherPanel() {
             alert('Посилання скопійовано!');
         });
     }
+
+    renderHistoryList();
 }
 
 function resetTaskDrawingState() {
@@ -380,7 +381,6 @@ function updateTeacherInstructions() {
     }
 }
 
-// Canvas Вчителя
 function setupTeacherCanvas() {
     const canvas = document.getElementById('teacherCanvas');
     const mapImg = document.getElementById('mapImagePreview');
@@ -456,19 +456,16 @@ function redrawTeacherCanvas() {
     const w = canvas.width;
     const h = canvas.height;
 
-    // 1. Одинарна мітка
     if (currentTaskType === 'marker' && currentStandardPoint) {
         drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e');
     }
 
-    // 2. Кілька міток (2+)
     if (currentTaskType === 'multi-marker' && multiMarkers.length > 0) {
         multiMarkers.forEach((pt, i) => {
             drawPointOnContext(ctx, pt, w, h, '#3182ce', (i + 1).toString());
         });
     }
 
-    // 3. Зелена та Червона області
     if (donutOuterPolygon.length > 1) {
         drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.25)');
     }
@@ -551,21 +548,17 @@ async function deleteTest(code) {
         return;
     }
 
-    // 1. Видалення з локальної історії (LocalStorage)
     let testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
     if (testsHistory[code]) {
         delete testsHistory[code];
         localStorage.setItem('testsHistory', JSON.stringify(testsHistory));
     }
 
-    // 2. Видалення з хмари Firebase (якщо доступно)
     try {
-        if (window.fbDB && window.fbRef && window.fbRemove) {
-            const testRef = window.fbRef(window.fbDB, 'tests/' + code);
-            const resultsRef = window.fbRef(window.fbDB, 'results/' + code);
-            await window.fbRemove(testRef);
-            await window.fbRemove(resultsRef);
-        }
+        const testRef = ref(db, 'tests/' + code);
+        const resultsRef = ref(db, 'results/' + code);
+        await remove(testRef);
+        await remove(resultsRef);
     } catch (error) {
         console.error("Помилка видалення з Firebase:", error);
     }
@@ -621,16 +614,23 @@ async function loadTestByCode(code) {
     loadedTest = test;
     loadedTestCode = code;
 
-    document.getElementById('codeLoaderSection').style.display = 'none';
-    document.getElementById('testArea').style.display = 'block';
-    document.getElementById('displayTestTitle').innerText = loadedTest.title;
+    const loaderSec = document.getElementById('codeLoaderSection');
+    const testAreaSec = document.getElementById('testArea');
+
+    if (loaderSec) loaderSec.style.display = 'none';
+    if (testAreaSec) testAreaSec.style.display = 'block';
+
+    const titleElem = document.getElementById('displayTestTitle');
+    if (titleElem) titleElem.innerText = loadedTest.title;
 
     const img = document.getElementById('studentMapImage');
-    img.src = loadedTest.imageSrc;
-    img.onload = () => {
-        setupStudentCanvas();
-        renderStudentTasks();
-    };
+    if (img) {
+        img.src = loadedTest.imageSrc;
+        img.onload = () => {
+            setupStudentCanvas();
+            renderStudentTasks();
+        };
+    }
 }
 
 function setupStudentCanvas() {
@@ -787,13 +787,15 @@ function selectTaskForStudent(index) {
     const task = loadedTest.tasks[index];
     const studentInstruction = document.getElementById('studentInstruction');
 
-    if (task.type === 'marker') {
-        studentInstruction.innerHTML = `📍 <b>Завдання №${index + 1}:</b> Натисніть на карту, щоб поставити 1 точкову мітку.`;
-    } else if (task.type === 'multi-marker') {
-        const currentCount = Array.isArray(studentAnswers[index]) ? studentAnswers[index].length : 0;
-        studentInstruction.innerHTML = `📌📌 <b>Завдання №${index + 1}:</b> Поставте <b>${task.multiPoints.length}</b> точок на карті (поставлено: ${currentCount}).`;
-    } else {
-        studentInstruction.innerHTML = `🟢 <b>Завдання №${index + 1}:</b> Затисніть та обведіть правильну область на карті.`;
+    if (studentInstruction) {
+        if (task.type === 'marker') {
+            studentInstruction.innerHTML = `📍 <b>Завдання №${index + 1}:</b> Натисніть на карту, щоб поставити 1 точкову мітку.`;
+        } else if (task.type === 'multi-marker') {
+            const currentCount = Array.isArray(studentAnswers[index]) ? studentAnswers[index].length : 0;
+            studentInstruction.innerHTML = `📌📌 <b>Завдання №${index + 1}:</b> Поставте <b>${task.multiPoints.length}</b> точок на карті (поставлено: ${currentCount}).`;
+        } else {
+            studentInstruction.innerHTML = `🟢 <b>Завдання №${index + 1}:</b> Затисніть та обведіть правильну область на карті.`;
+        }
     }
     renderStudentTasks();
 }
@@ -862,14 +864,12 @@ async function checkStudentWork() {
     const scoreSummary = document.getElementById('scoreSummary');
     const detailedReport = document.getElementById('detailedReport');
 
-    resultsSection.style.display = 'block';
-    scoreSummary.innerHTML = `Набрано балів: ${totalScore} з ${maxScore} можливих`;
-    detailedReport.innerText = report;
+    if (resultsSection) resultsSection.style.display = 'block';
+    if (scoreSummary) scoreSummary.innerHTML = `Набрано балів: ${totalScore} з ${maxScore} можливих`;
+    if (detailedReport) detailedReport.innerText = report;
 
-    // 1. Відправка результатів у FIREBASE REALTIME DATABASE
     await sendStudentResultsToFirebase(loadedTestCode, name, totalScore, maxScore, report);
 
-    // 2. Відправка результатів у TELEGRAM BOT ВЧИТЕЛЯ
     if (loadedTest.telegramChatId && loadedTest.telegramChatId.trim().length > 0) {
         const message = `📊 <b>Новий результат тесту!</b>\n\n` +
                         `📖 <b>Тест:</b> ${loadedTest.title}\n` +
@@ -880,7 +880,7 @@ async function checkStudentWork() {
         sendTelegramNotification(loadedTest.telegramChatId.trim(), message);
     }
 
-    resultsSection.scrollIntoView({ behavior: 'smooth' });
+    if (resultsSection) resultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 
 function sendTelegramNotification(chatId, messageText) {
@@ -889,7 +889,6 @@ function sendTelegramNotification(chatId, messageText) {
         return;
     }
 
-    // Очищаємо ID від можливих пробілів
     const cleanChatId = chatId.toString().trim();
 
     const payload = {
@@ -957,11 +956,9 @@ function isPointInPolygon(point, polygon) {
 
 async function saveTestToFirebase(testCode, testData) {
     try {
-        if (window.fbDB && window.fbRef && window.fbSet) {
-            const testRef = window.fbRef(window.fbDB, 'tests/' + testCode);
-            await window.fbSet(testRef, testData);
-            alert(`✅ Тест ${testCode} успішно опубліковано у хмарі Firebase!`);
-        }
+        const testRef = ref(db, 'tests/' + testCode);
+        await set(testRef, testData);
+        alert(`✅ Тест ${testCode} успішно опубліковано у хмарі Firebase!`);
     } catch (error) {
         console.error("Firebase Error:", error);
         alert("Помилка збереження в Firebase: " + error.message);
@@ -970,13 +967,11 @@ async function saveTestToFirebase(testCode, testData) {
 
 async function loadTestFromFirebase(testCode) {
     try {
-        if (window.fbDB && window.fbRef && window.fbGet && window.fbChild) {
-            const dbRef = window.fbRef(window.fbDB);
-            const snapshot = await window.fbGet(window.fbChild(dbRef, `tests/${testCode}`));
+        const dbRef = ref(db);
+        const snapshot = await get(child(dbRef, `tests/${testCode}`));
 
-            if (snapshot.exists()) {
-                return snapshot.val();
-            }
+        if (snapshot.exists()) {
+            return snapshot.val();
         }
     } catch (error) {
         console.error("Firebase Load Error:", error);
@@ -986,18 +981,16 @@ async function loadTestFromFirebase(testCode) {
 
 async function sendStudentResultsToFirebase(testCode, studentName, score, maxScore, reportDetails) {
     try {
-        if (window.fbDB && window.fbRef && window.fbSet && window.fbPush) {
-            const resultsListRef = window.fbRef(window.fbDB, `results/${testCode}`);
-            const newResultRef = window.fbPush(resultsListRef);
-            
-            await window.fbSet(newResultRef, {
-                studentName: studentName,
-                score: score,
-                maxScore: maxScore,
-                report: reportDetails,
-                timestamp: new Date().toLocaleString('uk-UA')
-            });
-        }
+        const resultsListRef = ref(db, `results/${testCode}`);
+        const newResultRef = push(resultsListRef);
+        
+        await set(newResultRef, {
+            studentName: studentName,
+            score: score,
+            maxScore: maxScore,
+            report: reportDetails,
+            timestamp: new Date().toLocaleString('uk-UA')
+        });
     } catch (error) {
         console.error("Firebase Send Results Error:", error);
     }
