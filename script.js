@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, set, remove, push, child } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, get, set, remove, push, child, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ==========================================
 // 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН
@@ -19,10 +19,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Telegram Bot Configuration
+// Telegram Bot Token
 const BOT_TOKEN = "8847524737:AAEUqbQzjtstH7uzvHSx0Dpx4B9G_HbFM2g";
 
-// Стан тесту вчителя
+// Глобальний стан конструктора Вчителя
 let currentTest = {
     id: null,
     title: '',
@@ -31,88 +31,54 @@ let currentTest = {
     tasks: []
 };
 
-// Стан малювання для вчителя
-let currentTaskType = 'marker'; // 'marker', 'multi-marker', 'donut'
+// Стан малювання Вчителя
+let currentTaskType = 'point'; // 'point', 'multi-point', 'line', 'polygon', 'donut'
 let currentStandardPoint = null;
-let multiMarkers = []; // Масив для кількох міток (2+)
-let useRedZone = false; // Червона зона для пончика
+let multiMarkers = [];
+let currentPolyline = [];
 let donutOuterPolygon = [];
 let donutInnerPolygon = [];
 let currentDrawingMode = 'outer'; // 'outer' або 'inner'
 let isTeacherDrawing = false;
+let useRedZone = false;
 
-// Стан виконання тесту учнем
+// Стан виконання Учня
 let loadedTest = null;
 let loadedTestCode = null;
 let activeTaskIndex = null;
-let studentAnswers = {}; // { taskIndex: point | arrayPoints | polygonArray }
+let studentAnswers = {}; 
 let isStudentDrawing = false;
 let currentStudentPolygon = [];
+let currentStudentLine = [];
 
-// Глобальні експорти для inline-подій HTML
+// Експорт функцій у глобальну область для HTML inline обробників
 window.removeTeacherTask = removeTeacherTask;
 window.copyCodeLink = copyCodeLink;
 window.deleteTest = deleteTest;
 window.selectTaskForStudent = selectTaskForStudent;
 window.fetchMyChatId = fetchMyChatId;
+window.clearCurrentShape = clearCurrentShape;
 
 // ==========================================
-// 2. ІНІЦІАЛІЗАЦІЯ ТА ПЕРЕВІРКА ОБМЕЖЕНЬ (БАН)
+// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', async () => {
-    await checkSiteRestrictions();
+document.addEventListener('DOMContentLoaded', () => {
     initTeacherPanel();
     initStudentPanel();
+    initAdminPanel();
+    setupGlobalResizeListeners();
 });
 
-async function checkSiteRestrictions() {
-    try {
-        const snap = await get(ref(db, 'settings'));
-        if (snap.exists()) {
-            const settings = snap.val();
-
-            // 1. Технічне обслуговування (Повне блокування)
-            if (settings.maintenance) {
-                document.body.innerHTML = `
-                    <div style="text-align:center; padding: 4rem 1rem; font-family: sans-serif;">
-                        <h1 style="font-size: 2.5rem; color: #e11d48;">🚧 Технічне обслуговування</h1>
-                        <p style="font-size: 1.2rem; color: #475569;">Сайт тимчасово недоступний через проведення профілактичних робіт.</p>
-                        <p style="color: #94a3b8;">Будь ласка, завітайте пізніше.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // 2. Блокування створення тестів вчителем
-            if (settings.blockTeacher && window.location.pathname.includes('teacher.html')) {
-                const teacherCard = document.querySelector('.card') || document.body;
-                teacherCard.innerHTML = `
-                    <div style="text-align:center; padding: 2rem; color: #e11d48;">
-                        <h2>🔒 Створення тестів заблоковано</h2>
-                        <p style="color: #475569;">Адміністратор тимчасово обновив права та відключив можливість створювати нові тести.</p>
-                    </div>
-                `;
-            }
-
-            // 3. Блокування проходження тестів учням
-            if (settings.blockStudents && window.location.pathname.includes('student.html')) {
-                const studentCard = document.querySelector('.card') || document.body;
-                studentCard.innerHTML = `
-                    <div style="text-align:center; padding: 2rem; color: #e11d48;">
-                        <h2>🔒 Проходження тестів заблоковано</h2>
-                        <p style="color: #475569;">Доступ до виконання тестів тимчасово припинено адміністратором.</p>
-                    </div>
-                `;
-            }
-        }
-    } catch (e) {
-        console.error("Помилка перевірки обмежень сайту:", e);
-    }
+function setupGlobalResizeListeners() {
+    window.addEventListener('resize', () => {
+        if (document.getElementById('teacherCanvas')) redrawTeacherCanvas();
+        if (document.getElementById('studentCanvas')) redrawStudentCanvas();
+    });
 }
 
 // ==========================================
-// 3. ПАНЕЛЬ ВЧИТЕЛЯ ТА TELEGRAM API
+// 3. ТЕЛЕГРАМ ІНТЕГРАЦІЯ ТА ДОПОМІЖНІ ФУНКЦІЇ
 // ==========================================
 
 async function fetchMyChatId() {
@@ -128,411 +94,435 @@ async function fetchMyChatId() {
 
         if (data.ok && data.result.length > 0) {
             const lastUpdate = data.result[data.result.length - 1];
+            let chatId = null;
+
             if (lastUpdate.message) {
-                const chatId = lastUpdate.message.chat.id;
-                input.value = chatId;
-                alert(`✅ Ваш Chat ID успішно знайдено: ${chatId}`);
+                chatId = lastUpdate.message.chat.id;
             } else if (lastUpdate.my_chat_member) {
-                const chatId = lastUpdate.my_chat_member.chat.id;
+                chatId = lastUpdate.my_chat_member.chat.id;
+            }
+
+            if (chatId) {
                 input.value = chatId;
                 alert(`✅ Ваш Chat ID успішно знайдено: ${chatId}`);
+            } else {
+                alert("💬 Будь ласка, відправте будь-яке повідомлення боту у Telegram та спробуйте знову!");
             }
         } else {
-            alert("Перейдіть у бот, натисніть START, після чого натисніть кнопку ще раз!");
+            alert("⚠️ Не вдалося знайти нових повідомлень. Перейдіть у бот, натисніть START або напишіть йому!");
         }
     } catch (error) {
-        console.error("Помилка отримання Chat ID:", error);
-        alert("Не вдалося отримати ID. Введіть його вручну.");
+        console.error("Помилка Telegram API:", error);
+        alert("Не вдалося автоматично отримати ID. Введіть його вручну.");
     } finally {
-        btn.innerText = "📲 2. Отримати свій ID";
+        btn.innerText = "📲 Отримати свій ID";
     }
 }
 
-function initTeacherPanel() {
-    const mapImageInput = document.getElementById('mapImage');
-    const mapImagePreview = document.getElementById('mapImagePreview');
-    const mapWrapper = document.getElementById('teacherMapWrapper');
-    const taskSection = document.getElementById('taskSection');
-    const taskTypeSelect = document.getElementById('taskType');
-    const donutOptions = document.getElementById('donutOptions');
-    const useRedZoneCheckbox = document.getElementById('useRedZoneCheckbox');
-    const addTaskBtn = document.getElementById('addTask');
-    const generateBtn = document.getElementById('generateStudentLink');
-    const copyLinkBtn = document.getElementById('copyLinkBtn');
+function sendTelegramNotification(chatId, messageText) {
+    if (!chatId) return;
 
-    if (!mapImageInput) return;
+    const cleanChatId = chatId.toString().trim();
+    const payload = {
+        chat_id: cleanChatId,
+        text: messageText,
+        parse_mode: 'HTML'
+    };
 
-    mapImageInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                mapImagePreview.src = evt.target.result;
-                currentTest.imageSrc = evt.target.result;
-                if (mapWrapper) mapWrapper.style.display = 'block';
-                if (taskSection) taskSection.style.display = 'block';
-                
-                mapImagePreview.onload = () => {
-                    setupTeacherCanvas();
-                };
-            };
-            reader.readAsDataURL(file);
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.ok) {
+            console.log("✅ Результати надіслано в Telegram!");
+        } else {
+            console.error("❌ Помилка Telegram:", data.description);
         }
-    });
+    })
+    .catch(err => console.error("❌ Мережева помилка Telegram:", err));
+}
 
+// ==========================================
+// 4. ПАНЕЛЬ ВЧИТЕЛЯ (КОНСТРУКТОР)
+// ==========================================
+
+function initTeacherPanel() {
+    const mapFileInput = document.getElementById('mapFileInput');
+    const mapUrlInput = document.getElementById('mapUrl');
+    const loadMapBtn = document.getElementById('loadMapBtn');
+    const teacherMapImage = document.getElementById('teacherMapImage');
+    const editorArea = document.getElementById('editorArea');
+    const taskTypeSelect = document.getElementById('taskType');
+    const addTaskBtn = document.getElementById('addTaskBtn');
+    const saveTestBtn = document.getElementById('saveTestBtn');
+    const clearShapeBtn = document.getElementById('clearCurrentShapeBtn');
+
+    if (!teacherMapImage) return;
+
+    // Обробка файлу зображення з ПК
+    if (mapFileInput) {
+        mapFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    loadTeacherMapImage(evt.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    // Обробка зображення за посиланням
+    if (loadMapBtn && mapUrlInput) {
+        loadMapBtn.addEventListener('click', () => {
+            const url = mapUrlInput.value.trim();
+            if (url) {
+                loadTeacherMapImage(url);
+            } else {
+                alert('Введіть коректне посилання на зображення!');
+            }
+        });
+    }
+
+    // Зміна типу завдання
     if (taskTypeSelect) {
         taskTypeSelect.addEventListener('change', (e) => {
             currentTaskType = e.target.value;
-            
-            if (donutOptions) {
-                donutOptions.style.display = (currentTaskType === 'donut') ? 'block' : 'none';
-            }
-
-            resetTaskDrawingState();
+            clearCurrentShape();
         });
     }
 
-    if (useRedZoneCheckbox) {
-        useRedZoneCheckbox.addEventListener('change', (e) => {
-            useRedZone = e.target.checked;
-            resetTaskDrawingState();
-        });
+    // Очищення контуру
+    if (clearShapeBtn) {
+        clearShapeBtn.addEventListener('click', clearCurrentShape);
     }
 
+    // Додавання завдання
     if (addTaskBtn) {
-        addTaskBtn.addEventListener('click', () => {
-            const text = document.getElementById('taskText').value.trim();
-            const plus = parseInt(document.getElementById('taskPointsPlus').value) || 5;
-            const minus = parseInt(document.getElementById('taskPointsMinus').value) || 2;
-
-            if (!text) {
-                alert('Введіть текст завдання!');
-                return;
-            }
-
-            let newTask = {
-                id: Date.now(),
-                type: currentTaskType,
-                text: text,
-                pointsPlus: plus,
-                pointsMinus: minus
-            };
-
-            if (currentTaskType === 'marker') {
-                if (!currentStandardPoint) {
-                    alert('Поставте точкову мітку на карті!');
-                    return;
-                }
-                newTask.standardPoint = currentStandardPoint;
-
-            } else if (currentTaskType === 'multi-marker') {
-                if (multiMarkers.length < 2) {
-                    alert('Поставте хоча б 2 мітки на карті!');
-                    return;
-                }
-                newTask.multiPoints = [...multiMarkers];
-
-            } else if (currentTaskType === 'donut') {
-                if (donutOuterPolygon.length < 3) {
-                    alert('Затисніть та обведіть зелену область!');
-                    return;
-                }
-                if (useRedZone && donutInnerPolygon.length < 3) {
-                    alert('Обведіть внутрішню червону зону ("дірку")!');
-                    return;
-                }
-                newTask.donut = {
-                    outer: [...donutOuterPolygon],
-                    inner: useRedZone ? [...donutInnerPolygon] : []
-                };
-            }
-
-            currentTest.tasks.push(newTask);
-            document.getElementById('taskText').value = '';
-            resetTaskDrawingState();
-            renderTeacherTasks();
-            alert('Завдання успішно додано!');
-        });
+        addTaskBtn.addEventListener('click', addNewTeacherTask);
     }
 
-    if (generateBtn) {
-        generateBtn.addEventListener('click', async () => {
-            const title = document.getElementById('testTitle').value.trim();
-            const chatIdInput = document.getElementById('teacherChatId');
-            const telegramChatId = chatIdInput ? chatIdInput.value.trim() : '';
-
-            if (!title) {
-                alert('Введіть назву тесту!');
-                return;
-            }
-            if (currentTest.tasks.length === 0) {
-                alert('Додайте хоча б одне завдання!');
-                return;
-            }
-
-            const code = generateUniqueCode();
-            currentTest.id = code;
-            currentTest.title = title;
-            currentTest.telegramChatId = telegramChatId;
-            currentTest.createdAt = new Date().toISOString();
-
-            await saveTestToFirebase(code, currentTest);
-
-            let testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
-            testsHistory[code] = currentTest;
-            localStorage.setItem('testsHistory', JSON.stringify(testsHistory));
-
-            const linkInput = document.getElementById('studentLinkInput');
-            const shareContainer = document.getElementById('shareLinkContainer');
-            const studentUrl = `${window.location.origin}${window.location.pathname.replace('teacher.html', 'student.html')}?code=${code}`;
-            
-            if (linkInput) linkInput.value = studentUrl;
-            if (shareContainer) shareContainer.style.display = 'block';
-
-            renderHistoryList();
-        });
+    // Збереження тесту
+    if (saveTestBtn) {
+        saveTestBtn.addEventListener('click', saveTestAndGenerateCode);
     }
 
-    if (copyLinkBtn) {
-        copyLinkBtn.addEventListener('click', () => {
-            const linkInput = document.getElementById('studentLinkInput');
-            if (linkInput) {
-                linkInput.select();
-                document.execCommand('copy');
-                alert('Посилання скопійовано!');
-            }
-        });
-    }
-
-    renderHistoryList();
+    renderTeacherHistoryList();
 }
 
-function resetTaskDrawingState() {
-    currentStandardPoint = null;
-    multiMarkers = [];
-    donutOuterPolygon = [];
-    donutInnerPolygon = [];
-    currentDrawingMode = 'outer';
-    isTeacherDrawing = false;
-    updateTeacherInstructions();
-    redrawTeacherCanvas();
-}
+function loadTeacherMapImage(src) {
+    const teacherMapImage = document.getElementById('teacherMapImage');
+    const editorArea = document.getElementById('editorArea');
 
-function updateTeacherInstructions() {
-    const mapInstruction = document.getElementById('mapInstruction');
-    const container = document.getElementById('teacherMapContainer');
-    if (!mapInstruction || !container) return;
+    teacherMapImage.src = src;
+    currentTest.imageSrc = src;
 
-    if (currentTaskType === 'marker') {
-        mapInstruction.innerHTML = '📌 <b>1 мітка:</b> Натисніть на карту, щоб поставити ТОЧКУ.';
-        container.className = 'map-container';
-    } else if (currentTaskType === 'multi-marker') {
-        mapInstruction.innerHTML = `📌📌 <b>Кілька міток:</b> Натискайте на карту, щоб поставити необхідну кількість точок (поставлено: <b>${multiMarkers.length}</b>).`;
-        container.className = 'map-container';
-    } else if (currentTaskType === 'donut') {
-        if (!useRedZone) {
-            mapInstruction.innerHTML = '🟢 <b>Область:</b> Затисніть мишку та обведіть потрібну область на карті.';
-            container.className = 'map-container drawing-outer';
-        } else {
-            if (currentDrawingMode === 'outer') {
-                mapInstruction.innerHTML = '🟢 <b>Крок 1:</b> Затисніть та обведіть <b>ЗОВНІШНЮ (зелену)</b> область.';
-                container.className = 'map-container drawing-outer';
-            } else {
-                mapInstruction.innerHTML = '🔴 <b>Крок 2:</b> Обведіть <b>ВНУТРІШНЮ (червону)</b> заборонену зону ("дірку").';
-                container.className = 'map-container drawing-inner';
-            }
-        }
-    }
+    teacherMapImage.onload = () => {
+        if (editorArea) editorArea.style.display = 'block';
+        setupTeacherCanvas();
+        clearCurrentShape();
+    };
+
+    teacherMapImage.onerror = () => {
+        alert('Помилка завантаження зображення! Перевірте файл або посилання.');
+    };
 }
 
 function setupTeacherCanvas() {
     const canvas = document.getElementById('teacherCanvas');
-    const mapImg = document.getElementById('mapImagePreview');
-    if (!canvas || !mapImg) return;
+    const img = document.getElementById('teacherMapImage');
+    if (!canvas || !img) return;
 
-    canvas.width = mapImg.clientWidth;
-    canvas.height = mapImg.clientHeight;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
 
-    canvas.addEventListener('mousedown', handleTeacherPointerDown);
-    canvas.addEventListener('mousemove', handleTeacherPointerMove);
-    canvas.addEventListener('mouseup', handleTeacherPointerUp);
+    canvas.onmousedown = handleTeacherPointerDown;
+    canvas.onmousemove = handleTeacherPointerMove;
+    canvas.onmouseup = handleTeacherPointerUp;
 
-    canvas.addEventListener('touchstart', (e) => { handleTeacherPointerDown(e.touches[0]); e.preventDefault(); });
-    canvas.addEventListener('touchmove', (e) => { handleTeacherPointerMove(e.touches[0]); e.preventDefault(); });
-    canvas.addEventListener('touchend', handleTeacherPointerUp);
+    canvas.ontouchstart = (e) => { handleTeacherPointerDown(e.touches[0]); e.preventDefault(); };
+    canvas.ontouchmove = (e) => { handleTeacherPointerMove(e.touches[0]); e.preventDefault(); };
+    canvas.ontouchend = (e) => { handleTeacherPointerUp(e); e.preventDefault(); };
+}
+
+function clearCurrentShape() {
+    currentStandardPoint = null;
+    multiMarkers = [];
+    currentPolyline = [];
+    donutOuterPolygon = [];
+    donutInnerPolygon = [];
+    currentDrawingMode = 'outer';
+    isTeacherDrawing = false;
+    redrawTeacherCanvas();
 }
 
 function handleTeacherPointerDown(e) {
-    const point = getNormalizedCoordinates(e);
+    const point = getNormalizedCoordinates(e, 'teacherMapImage');
 
-    if (currentTaskType === 'marker') {
+    if (currentTaskType === 'point' || currentTaskType === 'marker') {
         currentStandardPoint = point;
         redrawTeacherCanvas();
-    } else if (currentTaskType === 'multi-marker') {
+    } else if (currentTaskType === 'multi-point' || currentTaskType === 'multi-marker') {
         multiMarkers.push(point);
-        updateTeacherInstructions();
         redrawTeacherCanvas();
-    } else if (currentTaskType === 'donut') {
+    } else if (currentTaskType === 'line') {
+        currentPolyline.push(point);
+        redrawTeacherCanvas();
+    } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
         isTeacherDrawing = true;
         if (currentDrawingMode === 'outer') {
-            donutOuterPolygon = [point];
+            donutOuterPolygon.push(point);
         } else {
-            donutInnerPolygon = [point];
+            donutInnerPolygon.push(point);
         }
+        redrawTeacherCanvas();
     }
 }
 
 function handleTeacherPointerMove(e) {
-    if (!isTeacherDrawing || currentTaskType !== 'donut') return;
-    const point = getNormalizedCoordinates(e);
+    if (!isTeacherDrawing) return;
+    const point = getNormalizedCoordinates(e, 'teacherMapImage');
 
-    if (currentDrawingMode === 'outer') {
-        donutOuterPolygon.push(point);
-    } else {
-        donutInnerPolygon.push(point);
+    if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
+        if (currentDrawingMode === 'outer') {
+            donutOuterPolygon.push(point);
+        } else {
+            donutInnerPolygon.push(point);
+        }
+        redrawTeacherCanvas();
     }
-    redrawTeacherCanvas();
 }
 
 function handleTeacherPointerUp() {
-    if (!isTeacherDrawing || currentTaskType !== 'donut') return;
-    isTeacherDrawing = false;
-
-    if (currentDrawingMode === 'outer' && donutOuterPolygon.length > 2) {
-        if (useRedZone) {
-            currentDrawingMode = 'inner';
-            updateTeacherInstructions();
-        } else {
-            alert('✅ Область успішно сформовано!');
-        }
-    } else if (currentDrawingMode === 'inner' && donutInnerPolygon.length > 2) {
-        alert('✅ Зелену та Червону зони сформовано!');
+    if (isTeacherDrawing) {
+        isTeacherDrawing = false;
     }
 }
 
 function redrawTeacherCanvas() {
     const canvas = document.getElementById('teacherCanvas');
-    const mapImg = document.getElementById('mapImagePreview');
-    if (!canvas || !mapImg) return;
+    const img = document.getElementById('teacherMapImage');
+    if (!canvas || !img) return;
 
     const ctx = canvas.getContext('2d');
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const w = canvas.width;
     const h = canvas.height;
 
-    if (currentTaskType === 'marker' && currentStandardPoint) {
-        drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e');
+    if (currentStandardPoint) {
+        drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e', 'Еталон');
     }
 
-    if (currentTaskType === 'multi-marker' && multiMarkers.length > 0) {
+    if (multiMarkers.length > 0) {
         multiMarkers.forEach((pt, i) => {
             drawPointOnContext(ctx, pt, w, h, '#3182ce', (i + 1).toString());
         });
     }
 
-    if (donutOuterPolygon.length > 1) {
-        drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.25)');
+    if (currentPolyline.length > 0) {
+        drawPolylineOnContext(ctx, currentPolyline, w, h, '#d69e2e');
     }
-    if (useRedZone && donutInnerPolygon.length > 1) {
-        drawPolygonOnContext(ctx, donutInnerPolygon, w, h, '#e53e3e', 'rgba(229, 62, 62, 0.35)');
+
+    if (donutOuterPolygon.length > 1) {
+        drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.3)');
+    }
+
+    if (donutInnerPolygon.length > 1) {
+        drawPolygonOnContext(ctx, donutInnerPolygon, w, h, '#e53e3e', 'rgba(229, 62, 62, 0.4)');
     }
 }
 
-function renderTeacherTasks() {
-    const list = document.getElementById('teacherTasksList');
-    if (!list) return;
+function addNewTeacherTask() {
+    const instructionInput = document.getElementById('taskInstruction');
+    const pointsInput = document.getElementById('taskPoints');
 
-    if (currentTest.tasks.length === 0) {
-        list.innerHTML = '<p class="empty-text">Ще немає доданих завдань.</p>';
+    const instruction = instructionInput ? instructionInput.value.trim() : '';
+    const points = pointsInput ? parseInt(pointsInput.value) || 2 : 2;
+
+    if (!instruction) {
+        alert('Будь ласка, введіть інструкцію/текст завдання!');
         return;
     }
 
-    list.innerHTML = currentTest.tasks.map((task, index) => {
-        let typeBadge = '';
-        if (task.type === 'marker') typeBadge = '📌 1 Мітка';
-        else if (task.type === 'multi-marker') typeBadge = `📌📌 ${task.multiPoints ? task.multiPoints.length : 0} Міток`;
-        else if (task.type === 'donut') typeBadge = (task.donut && task.donut.inner && task.donut.inner.length > 0) ? '🍩 Пончик (з діркою)' : '🟢 Область';
+    let taskData = {
+        id: Date.now(),
+        type: currentTaskType,
+        instruction: instruction,
+        points: points
+    };
 
-        const plus = task.pointsPlus ?? 5;
-        const minus = task.pointsMinus ?? 2;
+    if (currentTaskType === 'point' || currentTaskType === 'marker') {
+        if (!currentStandardPoint) {
+            alert('Позначте еталонну точку на карті!');
+            return;
+        }
+        taskData.standardPoint = currentStandardPoint;
+    } else if (currentTaskType === 'multi-point' || currentTaskType === 'multi-marker') {
+        if (multiMarkers.length < 2) {
+            alert('Поставить хоча б 2 мітки на карті!');
+            return;
+        }
+        taskData.multiPoints = [...multiMarkers];
+    } else if (currentTaskType === 'line') {
+        if (currentPolyline.length < 2) {
+            alert('Намалюйте лінію або маршрут (мінімум 2 точки)!');
+            return;
+        }
+        taskData.polyline = [...currentPolyline];
+    } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
+        if (donutOuterPolygon.length < 3) {
+            alert('Намалюйте замкнену область на карті (мінімум 3 точки)!');
+            return;
+        }
+        taskData.polygon = {
+            outer: [...donutOuterPolygon],
+            inner: [...donutInnerPolygon]
+        };
+    }
 
-        return `
-            <li class="task-item">
-                <div>
-                    <b>${index + 1}. ${task.text}</b> 
-                    <span style="font-size: 0.85rem; color: #718096; margin-left: 10px;">
-                        (${typeBadge} | +${plus} / -${minus} б.)
-                    </span>
+    currentTest.tasks.push(taskData);
+    instructionInput.value = '';
+    clearCurrentShape();
+    renderTeacherTasksList();
+    alert('✅ Завдання додано до списку!');
+}
+
+function renderTeacherTasksList() {
+    const container = document.getElementById('tasksList');
+    if (!container) return;
+
+    if (currentTest.tasks.length === 0) {
+        container.innerHTML = '<p style="color: #a0aec0; font-style: italic;">Завдань поки немає.</p>';
+        return;
+    }
+
+    container.innerHTML = currentTest.tasks.map((task, idx) => `
+        <div class="task-item">
+            <div>
+                <b>${idx + 1}. ${task.instruction}</b>
+                <div style="font-size:0.8rem; color:#718096;">
+                    Тип: ${getTaskTypeName(task.type)} | Макс. бал: ${task.points}
                 </div>
-                <button onclick="removeTeacherTask(${index})" class="btn danger-btn" style="padding: 4px 10px; font-size: 0.8rem;">Видалити</button>
-            </li>
-        `;
-    }).join('');
+            </div>
+            <button onclick="removeTeacherTask(${idx})" class="btn danger-btn" style="padding: 4px 10px; font-size: 0.8rem;">Видалити</button>
+        </div>
+    `).join('');
+}
+
+function getTaskTypeName(type) {
+    switch (type) {
+        case 'point': case 'marker': return 'Мітка';
+        case 'multi-point': case 'multi-marker': return 'Кілька міток';
+        case 'line': return 'Лінія/Маршрут';
+        case 'polygon': case 'donut': return 'Область/Полігон';
+        default: return 'Елемент';
+    }
 }
 
 function removeTeacherTask(index) {
     currentTest.tasks.splice(index, 1);
-    renderTeacherTasks();
+    renderTeacherTasksList();
 }
 
-function renderHistoryList() {
-    const historyList = document.getElementById('historyList');
-    if (!historyList) return;
+async function saveTestAndGenerateCode() {
+    const titleInput = document.getElementById('testTitle');
+    const title = titleInput ? titleInput.value.trim() : '';
 
-    const testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
-    const keys = Object.keys(testsHistory);
-
-    if (keys.length === 0) {
-        historyList.innerHTML = '<p class="empty-text">Історія порожня.</p>';
+    if (!title) {
+        alert('Укажіть назву тесту!');
         return;
     }
 
-    historyList.innerHTML = keys.map(code => {
-        const item = testsHistory[code];
-        return `
-            <li class="task-item">
-                <div>
-                    <span class="badge-code">${code}</span>
-                    <b style="margin-left: 10px;">${item.title}</b>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button onclick="copyCodeLink('${code}')" class="btn primary-btn" style="padding: 4px 10px; font-size: 0.8rem;">Копіювати посилання</button>
-                    <button onclick="deleteTest('${code}')" class="btn danger-btn" style="padding: 4px 10px; font-size: 0.8rem;">Видалити</button>
-                </div>
-            </li>
-        `;
-    }).join('');
+    if (currentTest.tasks.length === 0) {
+        alert('Створіть хоча б одне завдання!');
+        return;
+    }
+
+    const code = generateUnique10Code();
+    currentTest.id = code;
+    currentTest.title = title;
+    currentTest.createdAt = new Date().toLocaleString('uk-UA');
+
+    try {
+        const testRef = ref(db, 'tests/' + code);
+        await set(testRef, currentTest);
+
+        const codeSec = document.getElementById('generatedCodeSection');
+        const codeDisplay = document.getElementById('testCodeDisplay');
+
+        if (codeDisplay) codeDisplay.innerText = code;
+        if (codeSec) codeSec.style.display = 'block';
+
+        let history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
+        history[code] = currentTest;
+        localStorage.setItem('teacherHistory', JSON.stringify(history));
+
+        renderTeacherHistoryList();
+        alert(`🎉 Тест успішно створено! Код: ${code}`);
+    } catch (e) {
+        console.error("Помилка збереження тесту:", e);
+        alert("Не вдалося зберегти тест в БД: " + e.message);
+    }
+}
+
+function renderTeacherHistoryList() {
+    const historyContainer = document.getElementById('teacherHistoryList');
+    if (!historyContainer) return;
+
+    const history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
+    const keys = Object.keys(history);
+
+    if (keys.length === 0) {
+        historyContainer.innerHTML = '<p style="color:#a0aec0; font-style:italic;">Створених тестів не знайдено.</p>';
+        return;
+    }
+
+    historyContainer.innerHTML = keys.map(code => `
+        <div class="task-item">
+            <div>
+                <b style="color:#3182ce;">${code}</b> — ${history[code].title}
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button onclick="copyCodeLink('${code}')" class="btn primary-btn" style="padding:4px 8px; font-size:0.8rem;">Копіювати</button>
+                <button onclick="deleteTest('${code}')" class="btn danger-btn" style="padding:4px 8px; font-size:0.8rem;">Видалити</button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function copyCodeLink(code) {
-    const studentUrl = `${window.location.origin}${window.location.pathname.replace('teacher.html', 'student.html')}?code=${code}`;
-    navigator.clipboard.writeText(studentUrl);
-    alert('Посилання скопійовано!');
+    const url = `${window.location.origin}${window.location.pathname.replace('teacher.html', 'student.html')}?code=${code}`;
+    navigator.clipboard.writeText(url);
+    alert('Посилання на тест скопійовано у буфер обміну!');
 }
 
 async function deleteTest(code) {
-    if (!confirm(`Ви дійсно бажаєте видалити тест з кодом "${code}"?`)) {
-        return;
-    }
+    if (!confirm(`Ви впевнені, що хочете видалити тест ${code}?`)) return;
 
-    let testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
-    if (testsHistory[code]) {
-        delete testsHistory[code];
-        localStorage.setItem('testsHistory', JSON.stringify(testsHistory));
-    }
+    let history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
+    delete history[code];
+    localStorage.setItem('teacherHistory', JSON.stringify(history));
 
     try {
         await remove(ref(db, 'tests/' + code));
-    } catch (error) {
-        console.error("Помилка видалення з Firebase:", error);
+        await remove(ref(db, 'results/' + code));
+    } catch (e) {
+        console.error("Помилка видалення тесту з Firebase:", e);
     }
 
+    renderTeacherHistoryList();
     alert('Тест успішно видалено!');
-    renderHistoryList();
 }
 
 // ==========================================
-// 4. ПАНЕЛЬ УЧНЯ
+// 5. ПАНЕЛЬ УЧНЯ (ПРОХОДЖЕННЯ)
 // ==========================================
 
 function initStudentPanel() {
@@ -552,7 +542,7 @@ function initStudentPanel() {
             if (inputCode) {
                 loadTestByCode(inputCode);
             } else {
-                alert('Введіть код тесту!');
+                alert('Введіть 10-значний код тесту!');
             }
         });
     }
@@ -564,14 +554,14 @@ function initStudentPanel() {
 
 async function loadTestByCode(code) {
     let test = await loadTestFromFirebase(code);
-    
+
     if (!test) {
-        const testsHistory = JSON.parse(localStorage.getItem('testsHistory') || '{}');
-        test = testsHistory[code];
+        const history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
+        test = history[code];
     }
 
     if (!test) {
-        alert('Тест із таким кодом не знайдено!');
+        alert('❌ Тест із таким кодом не знайдено!');
         return;
     }
 
@@ -579,18 +569,18 @@ async function loadTestByCode(code) {
     loadedTestCode = code;
 
     const loaderSec = document.getElementById('codeLoaderSection');
-    const testAreaSec = document.getElementById('testArea');
+    const testArea = document.getElementById('testArea');
 
     if (loaderSec) loaderSec.style.display = 'none';
-    if (testAreaSec) testAreaSec.style.display = 'block';
+    if (testArea) testArea.style.display = 'block';
 
-    const titleElem = document.getElementById('displayTestTitle');
-    if (titleElem) titleElem.innerText = loadedTest.title;
+    const displayTitle = document.getElementById('displayTestTitle');
+    if (displayTitle) displayTitle.innerText = loadedTest.title;
 
-    const img = document.getElementById('studentMapImage');
-    if (img) {
-        img.src = loadedTest.imageSrc;
-        img.onload = () => {
+    const studentMapImg = document.getElementById('studentMapImage');
+    if (studentMapImg) {
+        studentMapImg.src = loadedTest.imageSrc;
+        studentMapImg.onload = () => {
             setupStudentCanvas();
             renderStudentTasks();
         };
@@ -599,175 +589,166 @@ async function loadTestByCode(code) {
 
 function setupStudentCanvas() {
     const canvas = document.getElementById('studentCanvas');
-    const mapImg = document.getElementById('studentMapImage');
-    if (!canvas || !mapImg) return;
+    const img = document.getElementById('studentMapImage');
+    if (!canvas || !img) return;
 
-    canvas.width = mapImg.clientWidth;
-    canvas.height = mapImg.clientHeight;
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
 
-    canvas.addEventListener('mousedown', handleStudentPointerDown);
-    canvas.addEventListener('mousemove', handleStudentPointerMove);
-    canvas.addEventListener('mouseup', handleStudentPointerUp);
+    canvas.onmousedown = handleStudentPointerDown;
+    canvas.onmousemove = handleStudentPointerMove;
+    canvas.onmouseup = handleStudentPointerUp;
 
-    canvas.addEventListener('touchstart', (e) => { handleStudentPointerDown(e.touches[0]); e.preventDefault(); });
-    canvas.addEventListener('touchmove', (e) => { handleStudentPointerMove(e.touches[0]); e.preventDefault(); });
-    canvas.addEventListener('touchend', handleStudentPointerUp);
+    canvas.ontouchstart = (e) => { handleStudentPointerDown(e.touches[0]); e.preventDefault(); };
+    canvas.ontouchmove = (e) => { handleStudentPointerMove(e.touches[0]); e.preventDefault(); };
+    canvas.ontouchend = (e) => { handleStudentPointerUp(e); e.preventDefault(); };
 }
 
 function handleStudentPointerDown(e) {
     if (activeTaskIndex === null) {
-        alert('Спочатку оберіть завдання зі списку нижче!');
+        alert('Оберіть завдання зі списку нижче!');
         return;
     }
 
     const task = loadedTest.tasks[activeTaskIndex];
-    const point = getNormalizedCoordinates(e);
+    const pt = getNormalizedCoordinates(e, 'studentMapImage');
 
-    if (task.type === 'marker') {
-        studentAnswers[activeTaskIndex] = point;
+    if (task.type === 'point' || task.type === 'marker') {
+        studentAnswers[activeTaskIndex] = pt;
         redrawStudentCanvas();
         renderStudentTasks();
-
-    } else if (task.type === 'multi-marker') {
+    } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
         if (!Array.isArray(studentAnswers[activeTaskIndex])) {
             studentAnswers[activeTaskIndex] = [];
         }
-        
-        if (studentAnswers[activeTaskIndex].length < (task.multiPoints ? task.multiPoints.length : 0)) {
-            studentAnswers[activeTaskIndex].push(point);
+        if (studentAnswers[activeTaskIndex].length < (task.multiPoints ? task.multiPoints.length : 5)) {
+            studentAnswers[activeTaskIndex].push(pt);
             redrawStudentCanvas();
             renderStudentTasks();
         } else {
-            alert(`Ви вже поставили всі мітки! Щоб змінити, виберіть завдання заново.`);
+            alert('Ви вже поставили максимальну кількість міток для цього завдання!');
         }
-
-    } else if (task.type === 'donut') {
+    } else if (task.type === 'line') {
         isStudentDrawing = true;
-        currentStudentPolygon = [point];
+        currentStudentLine = [pt];
+    } else if (task.type === 'polygon' || task.type === 'donut') {
+        isStudentDrawing = true;
+        currentStudentPolygon = [pt];
     }
 }
 
 function handleStudentPointerMove(e) {
     if (!isStudentDrawing || activeTaskIndex === null) return;
-    const task = loadedTest.tasks[activeTaskIndex];
-    if (task.type !== 'donut') return;
 
-    const point = getNormalizedCoordinates(e);
-    currentStudentPolygon.push(point);
-    redrawStudentCanvas();
-    drawTempStudentPolygon();
+    const task = loadedTest.tasks[activeTaskIndex];
+    const pt = getNormalizedCoordinates(e, 'studentMapImage');
+
+    if (task.type === 'line') {
+        currentStudentLine.push(pt);
+        redrawStudentCanvas();
+    } else if (task.type === 'polygon' || task.type === 'donut') {
+        currentStudentPolygon.push(pt);
+        redrawStudentCanvas();
+    }
 }
 
 function handleStudentPointerUp() {
     if (!isStudentDrawing || activeTaskIndex === null) return;
     isStudentDrawing = false;
 
-    if (currentStudentPolygon.length > 2) {
-        studentAnswers[activeTaskIndex] = [...currentStudentPolygon];
+    const task = loadedTest.tasks[activeTaskIndex];
+
+    if (task.type === 'line') {
+        if (currentStudentLine.length > 1) {
+            studentAnswers[activeTaskIndex] = [...currentStudentLine];
+        }
+        currentStudentLine = [];
+    } else if (task.type === 'polygon' || task.type === 'donut') {
+        if (currentStudentPolygon.length > 2) {
+            studentAnswers[activeTaskIndex] = [...currentStudentPolygon];
+        }
         currentStudentPolygon = [];
-        redrawStudentCanvas();
-        renderStudentTasks();
-    } else {
-        alert('Обведіть область повністю!');
-        currentStudentPolygon = [];
-        redrawStudentCanvas();
     }
+
+    redrawStudentCanvas();
+    renderStudentTasks();
 }
 
 function redrawStudentCanvas() {
     const canvas = document.getElementById('studentCanvas');
-    const mapImg = document.getElementById('studentMapImage');
-    if (!canvas || !mapImg) return;
+    const img = document.getElementById('studentMapImage');
+    if (!canvas || !img) return;
 
     const ctx = canvas.getContext('2d');
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const w = canvas.width;
     const h = canvas.height;
 
-    Object.keys(studentAnswers).forEach(idx => {
-        const ans = studentAnswers[idx];
-        const task = loadedTest.tasks[idx];
+    Object.keys(studentAnswers).forEach(taskIdx => {
+        const ans = studentAnswers[taskIdx];
+        const task = loadedTest.tasks[taskIdx];
+        const label = `№${parseInt(taskIdx) + 1}`;
 
-        if (task.type === 'marker') {
-            drawPointOnContext(ctx, ans, w, h, '#3182ce', `№${parseInt(idx) + 1}`);
-
-        } else if (task.type === 'multi-marker' && Array.isArray(ans)) {
-            ans.forEach((pt, ptIdx) => {
-                drawPointOnContext(ctx, pt, w, h, '#3182ce', `${parseInt(idx) + 1}.${ptIdx + 1}`);
-            });
-
-        } else if (task.type === 'donut' && Array.isArray(ans)) {
-            drawPolygonOnContext(ctx, ans, w, h, '#3182ce', 'rgba(49, 130, 206, 0.3)');
+        if (task.type === 'point' || task.type === 'marker') {
+            drawPointOnContext(ctx, ans, w, h, '#3182ce', label);
+        } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
+            if (Array.isArray(ans)) {
+                ans.forEach((pt, i) => drawPointOnContext(ctx, pt, w, h, '#3182ce', `${label}.${i+1}`));
+            }
+        } else if (task.type === 'line') {
+            if (Array.isArray(ans)) drawPolylineOnContext(ctx, ans, w, h, '#3182ce');
+        } else if (task.type === 'polygon' || task.type === 'donut') {
+            if (Array.isArray(ans)) drawPolygonOnContext(ctx, ans, w, h, '#3182ce', 'rgba(49, 130, 206, 0.3)');
         }
     });
-}
 
-function drawTempStudentPolygon() {
-    const canvas = document.getElementById('studentCanvas');
-    if (!canvas || currentStudentPolygon.length < 2) return;
-
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-
-    drawPolygonOnContext(ctx, currentStudentPolygon, w, h, '#3182ce', 'rgba(49, 130, 206, 0.2)');
+    if (isStudentDrawing) {
+        if (currentStudentLine.length > 0) drawPolylineOnContext(ctx, currentStudentLine, w, h, '#3182ce');
+        if (currentStudentPolygon.length > 0) drawPolygonOnContext(ctx, currentStudentPolygon, w, h, '#3182ce', 'rgba(49, 130, 206, 0.2)');
+    }
 }
 
 function renderStudentTasks() {
     const container = document.getElementById('studentTasksContainer');
     if (!container || !loadedTest) return;
 
-    container.innerHTML = loadedTest.tasks.map((task, index) => {
-        const ans = studentAnswers[index];
-        let isDone = false;
-
-        if (task.type === 'marker') isDone = ans !== undefined;
-        else if (task.type === 'multi-marker') isDone = Array.isArray(ans) && ans.length === (task.multiPoints ? task.multiPoints.length : 0);
-        else if (task.type === 'donut') isDone = Array.isArray(ans) && ans.length > 2;
-
-        const isActive = activeTaskIndex === index;
+    container.innerHTML = loadedTest.tasks.map((task, idx) => {
+        const ans = studentAnswers[idx];
+        const isCompleted = ans !== undefined && ans !== null && (!Array.isArray(ans) || ans.length > 0);
+        const isActive = activeTaskIndex === idx;
 
         let className = 'student-task-card';
         if (isActive) className += ' active-task';
-        if (isDone) className += ' completed-task';
-
-        let countInfo = '';
-        if (task.type === 'multi-marker') {
-            const currentCount = Array.isArray(ans) ? ans.length : 0;
-            const targetCount = task.multiPoints ? task.multiPoints.length : 0;
-            countInfo = ` (${currentCount}/${targetCount} точок)`;
-        }
+        if (isCompleted) className += ' completed-task';
 
         return `
-            <div class="${className}" onclick="selectTaskForStudent(${index})">
-                <b>Завдання ${index + 1}: ${task.text}</b> ${countInfo}
-                <span style="float: right;">${isDone ? '✅ Виконано' : '⏳ Не виконано'}</span>
+            <div class="${className}" onclick="selectTaskForStudent(${idx})">
+                <b>Завдання ${idx + 1}: ${task.instruction}</b>
+                <span style="float: right; font-weight: bold;">
+                    ${isCompleted ? '✅ Виконано' : '⏳ Очікує'}
+                </span>
             </div>
         `;
     }).join('');
 }
 
-function selectTaskForStudent(index) {
-    activeTaskIndex = index;
-    const task = loadedTest.tasks[index];
-    const studentInstruction = document.getElementById('studentInstruction');
+function selectTaskForStudent(idx) {
+    activeTaskIndex = idx;
+    const task = loadedTest.tasks[idx];
+    const instrBox = document.getElementById('studentInstruction');
 
-    if (studentInstruction) {
-        if (task.type === 'marker') {
-            studentInstruction.innerHTML = `📍 <b>Завдання №${index + 1}:</b> Натисніть на карту, щоб поставити 1 точкову мітку.`;
-        } else if (task.type === 'multi-marker') {
-            const currentCount = Array.isArray(studentAnswers[index]) ? studentAnswers[index].length : 0;
-            const targetCount = task.multiPoints ? task.multiPoints.length : 0;
-            studentInstruction.innerHTML = `📌📌 <b>Завдання №${index + 1}:</b> Поставте <b>${targetCount}</b> точок на карті (поставлено: ${currentCount}).`;
-        } else {
-            studentInstruction.innerHTML = `🟢 <b>Завдання №${index + 1}:</b> Затисніть та обведіть правильну область на карті.`;
-        }
+    if (instrBox) {
+        instrBox.innerHTML = `👉 <b>Завдання ${idx + 1}:</b> ${task.instruction}`;
     }
+
     renderStudentTasks();
 }
 
 // ==========================================
-// 5. ПЕРЕВІРКА ВІДПОВІДЕЙ ТА СПОВІЩЕННЯ
+// 6. АЛГОРИТМИ ПЕРЕВІРКИ ТА ОБЧИСЛЕНЬ
 // ==========================================
 
 async function checkStudentWork() {
@@ -775,60 +756,47 @@ async function checkStudentWork() {
     const classInput = document.getElementById('studentClass');
 
     const name = nameInput ? nameInput.value.trim() : '';
-    const studentClass = classInput ? classInput.value.trim() : '-';
+    const studentClass = classInput ? classInput.value.trim() : '';
 
     if (!name) {
         alert("Введіть своє Ім'я та Прізвище!");
         return;
     }
 
-    let totalScore = 0;
-    let maxScore = 0;
-    let report = ``;
+    let earnedPoints = 0;
+    let maxPoints = 0;
+    let reportText = `Звіт виконання тесту: "${loadedTest.title}"\nУчень: ${name} (${studentClass || 'Без класу'})\n\n`;
 
-    loadedTest.tasks.forEach((task, index) => {
-        const plus = task.pointsPlus ?? (task.points ? task.points.plus : 5);
-        const minus = task.pointsMinus ?? (task.points ? task.points.minus : 2);
-
-        maxScore += plus;
-        const ans = studentAnswers[index];
+    loadedTest.tasks.forEach((task, idx) => {
+        maxPoints += task.points;
+        const ans = studentAnswers[idx];
+        let isCorrect = false;
 
         if (ans) {
-            let isCorrect = false;
-
-            if (task.type === 'marker') {
-                const dx = ans.x - task.standardPoint.x;
-                const dy = ans.y - task.standardPoint.y;
-                isCorrect = Math.sqrt(dx * dx + dy * dy) <= 3.5;
-
-            } else if (task.type === 'multi-marker') {
-                if (Array.isArray(ans) && task.multiPoints && ans.length === task.multiPoints.length) {
-                    let matched = 0;
+            if (task.type === 'point' || task.type === 'marker') {
+                const dist = getDistance(ans, task.standardPoint);
+                isCorrect = dist <= 4.0; // Допуск 4%
+            } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
+                if (Array.isArray(ans) && ans.length === task.multiPoints.length) {
+                    let matches = 0;
                     task.multiPoints.forEach(targetPt => {
-                        const hasMatch = ans.some(stPt => {
-                            const dx = stPt.x - targetPt.x;
-                            const dy = stPt.y - targetPt.y;
-                            return Math.sqrt(dx * dx + dy * dy) <= 3.5;
-                        });
-                        if (hasMatch) matched++;
+                        const hasMatch = ans.some(stPt => getDistance(stPt, targetPt) <= 4.5);
+                        if (hasMatch) matches++;
                     });
-                    isCorrect = (matched === task.multiPoints.length);
+                    isCorrect = matches === task.multiPoints.length;
                 }
-
-            } else if (task.type === 'donut') {
-                isCorrect = checkAreaCoverage(ans, task.donut);
+            } else if (task.type === 'line') {
+                isCorrect = checkLineMatch(ans, task.polyline);
+            } else if (task.type === 'polygon' || task.type === 'donut') {
+                isCorrect = checkPolygonMatch(ans, task.polygon);
             }
+        }
 
-            if (isCorrect) {
-                totalScore += plus;
-                report += `Завдання ${index + 1}: Вірно (+${plus} б.)\n`;
-            } else {
-                totalScore -= minus;
-                report += `Завдання ${index + 1}: Помилка (-${minus} б.)\n`;
-            }
+        if (isCorrect) {
+            earnedPoints += task.points;
+            reportText += `Завдання ${idx + 1}: Правильно (+${task.points} б.)\n`;
         } else {
-            totalScore -= minus;
-            report += `Завдання ${index + 1}: Не виконано (-${minus} б.)\n`;
+            reportText += `Завдання ${idx + 1}: Неправильно (0 б.)\n`;
         }
     });
 
@@ -837,60 +805,66 @@ async function checkStudentWork() {
     const detailedReport = document.getElementById('detailedReport');
 
     if (resultsSection) resultsSection.style.display = 'block';
-    if (scoreSummary) scoreSummary.innerHTML = `Набрано балів: ${totalScore} з ${maxScore} можливих`;
-    if (detailedReport) detailedReport.innerText = report;
+    if (scoreSummary) scoreSummary.innerText = `Набрано балів: ${earnedPoints} з ${maxPoints}`;
+    if (detailedReport) detailedReport.innerText = reportText;
 
-    // Збереження в загальну базу результатів (для Admin Panel)
-    await sendStudentResultsToFirebase(loadedTestCode, name, studentClass, totalScore, maxScore, report);
+    // Збереження у Firebase
+    await sendStudentResultToFirebase(loadedTestCode, name, studentClass, earnedPoints, maxPoints, reportText);
 
-    // Відправка в Telegram Вчителю
-    if (loadedTest.telegramChatId && loadedTest.telegramChatId.trim().length > 0) {
-        const message = `📊 <b>Новий результат тесту!</b>\n\n` +
-                        `📖 <b>Тест:</b> ${loadedTest.title}\n` +
-                        `👤 <b>Учень:</b> ${name} (${studentClass})\n` +
-                        `🏆 <b>Результат:</b> ${totalScore} з ${maxScore} балів\n\n` +
-                        `📝 <b>Деталізація:</b>\n${report}`;
-                        
-        sendTelegramNotification(loadedTest.telegramChatId.trim(), message);
+    // Сповіщення в Telegram
+    if (loadedTest.telegramChatId) {
+        const msg = `📊 <b>Результат тесту!</b>\n\n` +
+                    `📖 <b>Тест:</b> ${loadedTest.title}\n` +
+                    `👤 <b>Учень:</b> ${name} (${studentClass})\n` +
+                    `🏆 <b>Оцінка:</b> ${earnedPoints} / ${maxPoints} балів\n\n` +
+                    `📝 <b>Деталі:</b>\n${reportText}`;
+        sendTelegramNotification(loadedTest.telegramChatId, msg);
     }
 
     if (resultsSection) resultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 
-function sendTelegramNotification(chatId, messageText) {
-    if (!chatId) return;
-
-    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            chat_id: chatId.toString().trim(),
-            text: messageText,
-            parse_mode: 'HTML'
-        })
-    }).catch(err => console.error("❌ Помилка Telegram API:", err));
+function getDistance(p1, p2) {
+    if (!p1 || !p2) return 999;
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
+    return Math.sqrt(dx * dx + dy * dy);
 }
 
-function checkAreaCoverage(studentPoly, teacherDonut) {
+function checkLineMatch(studentLine, teacherLine) {
+    if (!studentLine || !teacherLine || studentLine.length < 2) return false;
+    let matchedPoints = 0;
+
+    teacherLine.forEach(tPt => {
+        const close = studentLine.some(sPt => getDistance(sPt, tPt) <= 5.0);
+        if (close) matchedPoints++;
+    });
+
+    return (matchedPoints / teacherLine.length) >= 0.75;
+}
+
+function checkPolygonMatch(studentPoly, teacherPoly) {
     if (!studentPoly || studentPoly.length < 3) return false;
 
-    let totalPoints = studentPoly.length;
-    let validPoints = 0;
+    const outer = teacherPoly.outer || teacherPoly;
+    const inner = teacherPoly.inner || [];
+
+    let insideValidArea = 0;
 
     studentPoly.forEach(pt => {
-        const inOuter = isPointInPolygon(pt, teacherDonut.outer);
-        const inInner = (teacherDonut.inner && teacherDonut.inner.length > 0) ? isPointInPolygon(pt, teacherDonut.inner) : false;
+        const inOuter = isPointInPolygon(pt, outer);
+        const inInner = inner.length > 2 ? isPointInPolygon(pt, inner) : false;
 
         if (inOuter && !inInner) {
-            validPoints++;
+            insideValidArea++;
         }
     });
 
-    return (validPoints / totalPoints) * 100 >= 80;
+    return (insideValidArea / studentPoly.length) >= 0.75;
 }
 
-function isPointInPolygon(point, polygon) {
-    let x = point.x, y = point.y;
+function isPointInPolygon(pt, polygon) {
+    let x = pt.x, y = pt.y;
     let inside = false;
 
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -904,57 +878,16 @@ function isPointInPolygon(point, polygon) {
 }
 
 // ==========================================
-// 6. РОБОТА З FIREBASE REALTIME DATABASE
-// ==========================================
-
-async function saveTestToFirebase(testCode, testData) {
-    try {
-        await set(ref(db, 'tests/' + testCode), testData);
-        alert(`✅ Тест ${testCode} успішно опубліковано у хмарі Firebase!`);
-    } catch (error) {
-        console.error("Firebase Error:", error);
-        alert("Помилка збереження в Firebase: " + error.message);
-    }
-}
-
-async function loadTestFromFirebase(testCode) {
-    try {
-        const snapshot = await get(child(ref(db), `tests/${testCode}`));
-        if (snapshot.exists()) {
-            return snapshot.val();
-        }
-    } catch (error) {
-        console.error("Firebase Load Error:", error);
-    }
-    return null;
-}
-
-async function sendStudentResultsToFirebase(testCode, studentName, studentClass, score, maxScore, reportDetails) {
-    try {
-        await push(ref(db, 'results'), {
-            testCode: testCode,
-            studentName: studentName,
-            studentClass: studentClass,
-            score: score,
-            maxScore: maxScore,
-            report: reportDetails,
-            date: new Date().toISOString()
-        });
-    } catch (error) {
-        console.error("Firebase Send Results Error:", error);
-    }
-}
-
-// ==========================================
-// 7. ДОПОМІЖНІ ФУНКЦІЇ МАЛЮВАННЯ ТА РОЗРАХУНКУ
+// 7. РЕНДЕРУВАННЯ ГРАФІКИ (CANVAS)
 // ==========================================
 
 function drawPointOnContext(ctx, point, w, h, color, label = '') {
+    if (!point) return;
     const px = (point.x / 100) * w;
     const py = (point.y / 100) * h;
 
     ctx.beginPath();
-    ctx.arc(px, py, 6, 0, 2 * Math.PI);
+    ctx.arc(px, py, 7, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
@@ -964,40 +897,159 @@ function drawPointOnContext(ctx, point, w, h, color, label = '') {
     if (label) {
         ctx.fillStyle = '#1e293b';
         ctx.font = 'bold 12px sans-serif';
-        ctx.fillText(label, px + 8, py + 4);
+        ctx.fillText(label, px + 10, py + 4);
     }
 }
 
+function drawPolylineOnContext(ctx, points, w, h, strokeColor) {
+    if (!points || points.length < 2) return;
+
+    ctx.beginPath();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 4;
+    ctx.moveTo((points[0].x / 100) * w, (points[0].y / 100) * h);
+
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo((points[i].x / 100) * w, (points[i].y / 100) * h);
+    }
+    ctx.stroke();
+}
+
 function drawPolygonOnContext(ctx, polygon, w, h, strokeColor, fillColor) {
+    if (!polygon || polygon.length < 2) return;
+
     ctx.beginPath();
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 3;
     ctx.moveTo((polygon[0].x / 100) * w, (polygon[0].y / 100) * h);
+
     for (let i = 1; i < polygon.length; i++) {
         ctx.lineTo((polygon[i].x / 100) * w, (polygon[i].y / 100) * h);
     }
+
     ctx.closePath();
     ctx.stroke();
+
     if (fillColor) {
         ctx.fillStyle = fillColor;
         ctx.fill();
     }
 }
 
-function getNormalizedCoordinates(e) {
-    const mapImg = document.getElementById('mapImagePreview') || document.getElementById('studentMapImage');
-    const rect = mapImg.getBoundingClientRect();
+function getNormalizedCoordinates(e, imgId) {
+    const img = document.getElementById(imgId);
+    const rect = img.getBoundingClientRect();
+    const clientX = e.clientX !== undefined ? e.clientX : (e.touches ? e.touches[0].clientX : 0);
+    const clientY = e.clientY !== undefined ? e.clientY : (e.touches ? e.touches[0].clientY : 0);
+
     return {
-        x: Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)),
-        y: Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100))
+        x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
+        y: Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100))
     };
 }
 
-function generateUniqueCode() {
+function generateUnique10Code() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let code = '';
     for (let i = 0; i < 10; i++) {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;
+}
+
+// ==========================================
+// 8. РОБОТА З FIREBASE REALTIME DATABASE
+// ==========================================
+
+async function loadTestFromFirebase(code) {
+    try {
+        const snapshot = await get(child(ref(db), `tests/${code}`));
+        if (snapshot.exists()) {
+            return snapshot.val();
+        }
+    } catch (e) {
+        console.error("Firebase Load Error:", e);
+    }
+    return null;
+}
+
+async function sendStudentResultToFirebase(code, name, studentClass, score, maxScore, report) {
+    try {
+        const resultsRef = ref(db, `results/${code}`);
+        const newRef = push(resultsRef);
+
+        await set(newRef, {
+            name: name,
+            studentClass: studentClass || '—',
+            score: score,
+            maxScore: maxScore,
+            report: report,
+            timestamp: new Date().toLocaleString('uk-UA')
+        });
+    } catch (e) {
+        console.error("Firebase Result Error:", e);
+    }
+}
+
+// ==========================================
+// 9. АДМІН-ПАНЕЛЬ ТА ЖУРНАЛ ОЦІНОК
+// ==========================================
+
+function initAdminPanel() {
+    const adminJournalContainer = document.getElementById('adminJournalContainer');
+    if (!adminJournalContainer) return;
+
+    loadAdminJournalData();
+}
+
+async function loadAdminJournalData() {
+    const journalContainer = document.getElementById('adminJournalContainer');
+    if (!journalContainer) return;
+
+    try {
+        const snapshot = await get(ref(db, 'results'));
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            let html = '';
+
+            Object.keys(data).forEach(testCode => {
+                html += `<h3 style="margin-top:20px; color:#3182ce;">Тест Код: ${testCode}</h3>`;
+                const resultsObj = data[testCode];
+
+                html += `
+                    <table style="width:100%; border-collapse:collapse; margin-top:8px;">
+                        <thead>
+                            <tr style="background:#edf2f7; text-align:left;">
+                                <th style="padding:8px; border:1px solid #cbd5e0;">Учень</th>
+                                <th style="padding:8px; border:1px solid #cbd5e0;">Клас</th>
+                                <th style="padding:8px; border:1px solid #cbd5e0;">Бал</th>
+                                <th style="padding:8px; border:1px solid #cbd5e0;">Дата</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                Object.keys(resultsObj).forEach(resId => {
+                    const r = resultsObj[resId];
+                    html += `
+                        <tr>
+                            <td style="padding:8px; border:1px solid #cbd5e0;">${r.name || r.studentName}</td>
+                            <td style="padding:8px; border:1px solid #cbd5e0;">${r.studentClass || '—'}</td>
+                            <td style="padding:8px; border:1px solid #cbd5e0; font-weight:bold; color:#2f855a;">${r.score} / ${r.maxScore}</td>
+                            <td style="padding:8px; border:1px solid #cbd5e0; font-size:0.85rem; color:#718096;">${r.timestamp}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `</tbody></table>`;
+            });
+
+            journalContainer.innerHTML = html;
+        } else {
+            journalContainer.innerHTML = '<p style="color:#718096;">Журнал оцінок порожній.</p>';
+        }
+    } catch (e) {
+        console.error("Journal Error:", e);
+        journalContainer.innerHTML = '<p style="color:#e53e3e;">Помилка завантаження журналу.</p>';
+    }
 }
