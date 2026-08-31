@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Конструктор Тестів — Інтерактивні Карти</title>
+    <title>Панель Вчителя — Інтерактивні Карти</title>
     <style>
         * {
             box-sizing: border-box;
@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 900px;
             margin: 0 auto;
             background: #ffffff;
             padding: 25px;
@@ -27,7 +27,7 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
         }
 
-        h1, h2, h3 {
+        h1, h2, h3, h4 {
             margin-bottom: 15px;
             color: #1a202c;
         }
@@ -36,11 +36,6 @@
             border-bottom: 2px solid #edf2f7;
             padding-bottom: 15px;
             margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
         }
 
         .form-group {
@@ -51,20 +46,23 @@
             display: block;
             font-weight: 600;
             margin-bottom: 5px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            color: #475569;
         }
 
-        input[type="text"], input[type="number"], input[type="password"], select, textarea {
+        input[type="text"],
+        input[type="number"],
+        select {
             width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #cbd5e0;
+            padding: 0.6rem;
+            border: 1px solid #cbd5e1;
             border-radius: 6px;
             font-size: 0.95rem;
             outline: none;
             transition: border-color 0.2s;
         }
 
-        input:focus, select:focus, textarea:focus {
+        input:focus, select:focus {
             border-color: #3182ce;
         }
 
@@ -91,15 +89,6 @@
             background-color: #2b6cb0;
         }
 
-        .success-btn {
-            background-color: #38a169;
-            color: white;
-        }
-
-        .success-btn:hover {
-            background-color: #2f855a;
-        }
-
         .danger-btn {
             background-color: #e53e3e;
             color: white;
@@ -109,30 +98,11 @@
             background-color: #c53030;
         }
 
-        .secondary-btn {
-            background-color: #718096;
-            color: white;
-        }
-
-        .secondary-btn:hover {
-            background-color: #4a5568;
-        }
-
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            background: #edf2f7;
-            padding: 10px;
-            border-radius: 8px;
-        }
-
         .map-container {
             position: relative;
             display: inline-block;
             max-width: 100%;
-            margin-top: 10px;
+            margin-top: 15px;
             border: 2px solid #cbd5e0;
             border-radius: 8px;
             overflow: hidden;
@@ -156,206 +126,140 @@
             cursor: crosshair;
         }
 
-        .code-display {
-            background: #ebf8ff;
-            border: 2px dashed #3182ce;
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .share-box {
+            background: #f0fff4;
+            border: 1px solid #c6f6d5;
             padding: 15px;
             border-radius: 8px;
-            text-align: center;
             margin-top: 20px;
-        }
-
-        .code-display span {
-            font-family: monospace;
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: #2b6cb0;
-            letter-spacing: 2px;
-        }
-
-        /* Модальне вікно входу для вчителя */
-        .auth-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.85);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-
-        .auth-card {
-            background: #ffffff;
-            padding: 30px;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
 
-    <!-- Модальне вікно авторизації вчителя -->
-    <div id="teacherAuthOverlay" class="auth-overlay">
-        <div class="auth-card">
-            <h2>🔑 Вхід для Вчителя</h2>
-            <p style="font-size: 0.85rem; color: #718096; margin-bottom: 15px;">Введіть пароль доступу до панелі конструктора:</p>
-            <div class="form-group">
-                <input type="password" id="teacherPasswordInput" placeholder="Пароль доступу">
-            </div>
-            <button id="teacherLoginBtn" class="btn primary-btn" style="width: 100%;">Увійти</button>
-            <a href="index.html" class="btn secondary-btn" style="width: 100%; text-align: center; margin-top: 10px; text-decoration: none;">На головну</a>
-        </div>
-    </div>
-
-    <!-- Основна панель вчителя -->
-    <div class="container" id="mainTeacherPanel" style="display: none;">
+    <div class="container">
         <div class="header-bar">
-            <h1>Конструктор Карт та Тестів</h1>
-            <a href="admin.html" class="btn secondary-btn">📊 Журнал оцінок</a>
+            <h1>Панель Вчителя (Конструктор тесту)</h1>
         </div>
 
-        <!-- Налаштування тесту -->
+        <!-- КРОК 1: Основна інформація -->
         <section class="form-group">
-            <label for="testTitle">Назва тесту / практичної роботи:</label>
-            <input type="text" id="testTitle" placeholder="Наприклад: Фізична карта України. Гори та рівнини">
+            <div class="grid-2">
+                <div>
+                    <label for="testTitle">Назва тесту / теми:</label>
+                    <input type="text" id="testTitle" placeholder="Наприклад: Географія України. Обласні центри">
+                </div>
+                <div>
+                    <label for="teacherChatId">Telegram Chat ID (для сповіщень):</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="teacherChatId" placeholder="Ваш Chat ID">
+                        <button type="button" id="getChatIdBtn" class="btn primary-btn" style="white-space: nowrap;">📲 Отримати свій ID</button>
+                    </div>
+                </div>
+            </div>
         </section>
 
-        <!-- Варіанти завантаження карти -->
-        <section class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <label style="font-size: 1rem; margin-bottom: 10px;">Джерело карти:</label>
-            
-            <div style="margin-bottom: 12px;">
-                <label for="mapFileInput" style="font-weight: normal; font-size: 0.85rem;">📁 Завантажити з комп'ютера (файл зображення):</label>
-                <input type="file" id="mapFileInput" accept="image/*" style="background: white;">
-            </div>
-
-            <div style="text-align: center; font-size: 0.8rem; color: #a0aec0; margin: 8px 0;">— АБО —</div>
-
-            <div>
-                <label for="mapUrl" style="font-weight: normal; font-size: 0.85rem;">🔗 Вказати посилання (URL):</label>
-                <div style="display: flex; gap: 10px;">
+        <!-- КРОК 2: Джерело зображення карти -->
+        <section class="form-group">
+            <label>Завантажити карту (Файл з ПК або URL):</label>
+            <div class="grid-2">
+                <div>
+                    <input type="file" id="mapFileInput" accept="image/*">
+                </div>
+                <div style="display: flex; gap: 8px;">
                     <input type="text" id="mapUrl" placeholder="https://example.com/map.jpg">
-                    <button id="loadMapBtn" class="btn primary-btn">Завантажити</button>
+                    <button type="button" id="loadMapBtn" class="btn primary-btn">Завантажити</button>
                 </div>
             </div>
         </section>
 
-        <!-- Зона редагування завдання -->
-        <div id="editorArea" style="display: none; margin-top: 25px;">
-            <hr style="border: 0; border-top: 1px solid #edf2f7; margin-bottom: 20px;">
-            <h2>Додавання завдання</h2>
-
-            <div class="form-group">
-                <label for="taskInstruction">Інструкція для учня:</label>
-                <input type="text" id="taskInstruction" placeholder="Наприклад: Позначте на карті найвищу точку Українських Карпат (Говерлу)">
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div class="form-group">
-                    <label for="taskType">Тип елемента:</label>
-                    <select id="taskType">
-                        <option value="point">Точка / Мітка</option>
-                        <option value="line">Лінія / Маршрут</option>
-                        <option value="polygon">Область / Полігон</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="taskPoints">Максимальний бал:</label>
-                    <input type="number" id="taskPoints" value="2" min="1" max="100">
-                </div>
-            </div>
-
-            <div class="toolbar">
-                <button id="clearCurrentShapeBtn" class="btn danger-btn">Очистити поточний контур</button>
-                <span style="font-size: 0.85rem; color: #718096; align-self: center;">Клацайте по карті, щоб нанести еталонну відповідь.</span>
-            </div>
-
-            <!-- Полотно Карти -->
+        <!-- Рабочая область конструктора -->
+        <div id="editorArea" style="display: none;">
             <div class="map-container">
-                <img id="teacherMapImage" src="" alt="Карта для редагування">
+                <img id="teacherMapImage" src="" alt="Інтерактивна Карта">
                 <canvas id="teacherCanvas"></canvas>
             </div>
 
-            <button id="addTaskBtn" class="btn success-btn" style="margin-top: 15px;">➕ Додати це завдання до тесту</button>
+            <!-- Форма створення завдання -->
+            <section style="margin-top: 25px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <h3>Додати нове завдання</h3>
+                
+                <div class="form-group">
+                    <label for="taskInstruction">Текст завдання / Інструкція для учня:</label>
+                    <input type="text" id="taskInstruction" placeholder="Наприклад: Знайдіть та позначте місто Київ">
+                </div>
 
-            <!-- Список вже доданих завдань -->
-            <section style="margin-top: 30px;">
-                <h3>Завдання в цьому тесті:</h3>
-                <div id="tasksList" style="margin-top: 10px;">
-                    <p style="color: #a0aec0; font-style: italic;">Завдань поки немає. Створіть перше завдання вище.</p>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="taskType">Тип завдання:</label>
+                        <select id="taskType">
+                            <option value="point">📌 Мітка (1 точка)</option>
+                            <option value="multi-point">📌📌 Кілька міток (2+ точок)</option>
+                            <option value="line">📏 Лінія / Маршрут</option>
+                            <option value="polygon">🔷 Область / Полігон</option>
+                            <option value="donut">🍩 Область із вирізкою (Пончик)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="taskPoints">Максимальний бал:</label>
+                        <input type="number" id="taskPoints" value="2" min="1">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button type="button" id="clearCurrentShapeBtn" class="btn danger-btn">Очистити контур</button>
+                    <button type="button" id="addTaskBtn" class="btn primary-btn">+ Додати завдання</button>
                 </div>
             </section>
 
-            <!-- Збереження та створення тесту -->
-            <div style="margin-top: 30px; border-top: 2px solid #edf2f7; padding-top: 20px;">
-                <button id="saveTestBtn" class="btn primary-btn" style="font-size: 1.1rem; padding: 12px 24px;">💾 Зберегти та згенерувати код</button>
+            <!-- Список створених завдань -->
+            <section style="margin-top: 25px;">
+                <h4>Список завдань поточного тесту:</h4>
+                <div id="tasksList" style="margin-top: 10px;"></div>
+            </section>
+
+            <!-- Публікація -->
+            <div style="margin-top: 25px; border-top: 2px solid #edf2f7; padding-top: 20px;">
+                <button type="button" id="saveTestBtn" class="btn primary-btn" style="background-color: #38a169; font-size: 1.1rem; padding: 12px 24px;">🚀 Зберегти та згенерувати код</button>
             </div>
 
-            <!-- Блок Згенерованого Коду -->
-            <div id="generatedCodeSection" class="code-display" style="display: none;">
-                <p>Тест успішно збережено! Передайте цей код учням:</p>
-                <span id="testCodeDisplay">XXXXXXXXXX</span>
+            <div id="generatedCodeSection" class="share-box" style="display: none;">
+                <h4>🎉 Тест успішно створено!</h4>
+                <p style="margin-top: 5px;">Код вашого тесту: <b id="testCodeDisplay" style="font-size: 1.3rem; color: #3182ce;"></b></p>
             </div>
         </div>
+
+        <!-- Історія тестів -->
+        <section style="margin-top: 40px; border-top: 2px solid #edf2f7; padding-top: 20px;">
+            <h3>Ваші створені тести</h3>
+            <div id="teacherHistoryList" style="margin-top: 10px;"></div>
+        </section>
+
+        <!-- Журнал оцінок -->
+        <section style="margin-top: 40px; border-top: 2px solid #edf2f7; padding-top: 20px;">
+            <h3>Журнал оцінок (Результати учнів)</h3>
+            <div id="adminJournalContainer" style="margin-top: 10px;"></div>
+        </section>
     </div>
 
-    <!-- Обробка вибору файлу з ПК -->
-    <script>
-        document.getElementById('mapFileInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(evt) {
-                    const img = document.getElementById('teacherMapImage');
-                    img.src = evt.target.result;
-                    document.getElementById('editorArea').style.display = 'block';
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-    </script>
-
-    <!-- FIREBASE SDK v10 MODULE & ПЕРЕВІРКА ПАРОЛЯ -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
-            authDomain: "intermap-app.firebaseapp.com",
-            databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "intermap-app",
-            storageBucket: "intermap-app.firebasestorage.app",
-            messagingSenderId: "869707502446",
-            appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-
-        async function verifyTeacherPassword() {
-            const inputPass = document.getElementById('teacherPasswordInput').value.trim();
-            try {
-                const authSnap = await get(ref(db, 'auth'));
-                const correctPass = authSnap.exists() && authSnap.val().teacherPassword ? authSnap.val().teacherPassword : 'teacher123';
-
-                if (inputPass === correctPass) {
-                    document.getElementById('teacherAuthOverlay').style.display = 'none';
-                    document.getElementById('mainTeacherPanel').style.display = 'block';
-                } else {
-                    alert('❌ Невірний пароль вчителя!');
-                }
-            } catch (err) {
-                alert("Помилка підключення до БД: " + err.message);
-            }
-        }
-
-        document.getElementById('teacherLoginBtn').addEventListener('click', verifyTeacherPassword);
-    </script>
-
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ -->
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (Module для підтримки Firebase v10) -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
