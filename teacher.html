@@ -42,27 +42,6 @@
             margin-bottom: 20px;
         }
 
-        /* Авторизація */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(8px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-
-        .auth-card {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 380px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
-        }
-
         .form-group {
             margin-bottom: 15px;
         }
@@ -218,29 +197,10 @@
 </head>
 <body>
 
-    <!-- МОДАЛЬНЕ ВІКНО АВТОРИЗАЦІЇ (Ключ + Пароль) -->
-    <div id="authModal" class="modal-overlay" style="position:fixed; inset:0; background:rgba(15,23,42,0.8); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; z-index:9999;">
-        <div class="auth-card" style="background:white; padding:2rem; border-radius:12px; width:100%; max-width:380px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2);">
-            <h2 style="margin-top:0; color:#1e293b;">🔑 Вхід для вчителя</h2>
-            <form id="teacherLoginForm">
-                <div style="margin-bottom: 1rem;">
-                    <label style="display:block; font-size:0.85rem; font-weight:600; color:#475569; margin-bottom:0.3rem;">Ліцензійний ключ:</label>
-                    <input type="text" id="teacherLicenseInput" placeholder="напр. GEO-2026-X89K" required style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
-                </div>
-                <div style="margin-bottom: 1.5rem;">
-                    <label style="display:block; font-size:0.85rem; font-weight:600; color:#475569; margin-bottom:0.3rem;">Пароль:</label>
-                    <input type="password" id="teacherPasswordInput" placeholder="Введіть пароль" required style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
-                </div>
-                <button type="submit" class="btn primary-btn" style="width:100%; padding:0.75rem; background:#2563eb; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Увійти в панель</button>
-            </form>
-        </div>
-    </div>
-
     <!-- ОСНОВНА ПАНЕЛЬ ВЧИТЕЛЯ -->
-    <div id="teacherContent" class="container" style="display: none;">
+    <div id="teacherContent" class="container">
         <div class="header-bar">
             <h1>Панель Створення Тесту</h1>
-            <button id="changePassBtn" class="btn secondary-btn" style="font-size: 0.85rem;">Змінити пароль</button>
         </div>
 
         <!-- КРОК 1: Основна інформація -->
