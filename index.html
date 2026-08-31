@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Intermap — Інтерактивні Карти</title>
+    <title>Інтерактивні Карти — Головна</title>
     <style>
         * {
             box-sizing: border-box;
@@ -15,21 +15,20 @@
         body {
             background-color: #f7fafc;
             color: #2d3748;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
             padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
         }
 
         .container {
-            max-width: 800px;
             width: 100%;
+            max-width: 800px;
             background: #ffffff;
             padding: 40px 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
             text-align: center;
         }
 
@@ -47,290 +46,91 @@
 
         .cards-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 20px;
-            margin-bottom: 25px;
         }
 
-        .card {
-            background: #f8fafc;
+        .role-card {
+            background: #ffffff;
             border: 2px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 30px 20px;
-            transition: all 0.3s ease;
+            border-radius: 10px;
+            padding: 25px 20px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s ease;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
             align-items: center;
         }
 
-        .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-            border-color: #cbd5e0;
+        .role-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
         }
 
-        .card-teacher { border-top: 6px solid #3182ce; }
-        .card-student { border-top: 6px solid #38a169; }
+        .role-card.student:hover {
+            border-color: #38a169;
+            background-color: #f0fff4;
+        }
 
-        .card-icon {
-            font-size: 2.5rem;
+        .role-card.teacher:hover {
+            border-color: #3182ce;
+            background-color: #ebf8ff;
+        }
+
+        .role-card.admin:hover {
+            border-color: #805ad5;
+            background-color: #faf5ff;
+        }
+
+        .icon {
+            font-size: 3rem;
             margin-bottom: 15px;
         }
 
-        .card h2 {
-            font-size: 1.3rem;
-            margin-bottom: 10px;
+        .role-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 8px;
             color: #2d3748;
         }
 
-        .card p {
-            font-size: 0.9rem;
+        .role-desc {
+            font-size: 0.88rem;
             color: #718096;
-            margin-bottom: 20px;
             line-height: 1.4;
         }
-
-        .btn {
-            display: inline-block;
-            width: 100%;
-            padding: 12px 20px;
-            font-weight: 600;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            text-decoration: none;
-            font-size: 1rem;
-            transition: background 0.2s, transform 0.1s;
-        }
-
-        .btn:active { transform: scale(0.98); }
-        .btn-teacher { background-color: #3182ce; color: white; }
-        .btn-teacher:hover { background-color: #2b6cb0; }
-        .btn-student { background-color: #38a169; color: white; }
-        .btn-student:hover { background-color: #2f855a; }
-
-        .btn-admin {
-            background-color: #0f172a;
-            color: white;
-            max-width: 280px;
-            margin: 10px auto 0 auto;
-        }
-
-        .btn-admin:hover { background-color: #1e293b; }
-
-        .code-input-group {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            outline: none;
-            text-align: center;
-            transition: border-color 0.2s;
-        }
-
-        input[type="text"]:focus, input[type="password"]:focus {
-            border-color: #3182ce;
-        }
-
-        .footer-info {
-            margin-top: 25px;
-            font-size: 0.85rem;
-            color: #a0aec0;
-            border-top: 1px solid #edf2f7;
-            padding-top: 15px;
-        }
-
-        /* Modal Structure */
-        .modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.6);
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal-card {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            width: 100%;
-            max-width: 360px;
-            text-align: left;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        }
-
-        .modal-card h3 { margin-bottom: 5px; color: #1a202c; }
-        .modal-card label { display: block; font-size: 0.8rem; font-weight: 600; margin: 10px 0 4px 0; color: #4a5568; }
-        .modal-card input { text-align: left; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1 id="mainTitle">🗺️ Ласкаво просимо до Intermap</h1>
-        <p class="subtitle" id="mainNotice">Платформа для створення та проходження геометричних і контурних тестів</p>
+        <h1>Інтерактивні Контурні Карти</h1>
+        <p class="subtitle">Оберіть режим роботи для продовження</p>
 
         <div class="cards-grid">
-            <!-- Картка Вчителя -->
-            <div class="card card-teacher">
-                <div>
-                    <div class="card-icon">👨‍🏫</div>
-                    <h2>Для Вчителя</h2>
-                    <p>Завантажуйте карти, створюйте завдання із точками чи контурними областями («пончиками») та отримуйте результати учнів.</p>
-                </div>
-                <a href="teacher.html" id="teacherLink" class="btn btn-teacher">Панель Вчителя</a>
-            </div>
-
             <!-- Картка Учня -->
-            <div class="card card-student">
-                <div>
-                    <div class="card-icon">🎓</div>
-                    <h2>Для Учня</h2>
-                    <p>Введіть 10-значний код тесту, отриманий від учителя, щоб розпочати виконання та перевірити свої знання.</p>
-                </div>
-                <div class="code-input-group">
-                    <input type="text" id="quickCodeInput" placeholder="Код (напр. A1b2C3d4E5)">
-                    <button id="startTestBtn" class="btn btn-student">Розпочати тест</button>
-                </div>
-            </div>
-        </div>
+            <a href="student.html" class="role-card student">
+                <div class="icon">🎓</div>
+                <div class="role-title">Пройти тест</div>
+                <div class="role-desc">Введіть код від вчителя та виконайте завдання на інтерактивній карті</div>
+            </a>
 
-        <div>
-            <button id="openAdminModalBtn" class="btn btn-admin">🔐 Адмін-панель</button>
-        </div>
+            <!-- Картка Вчителя -->
+            <a href="teacher.html" class="role-card teacher">
+                <div class="icon">🗺️</div>
+                <div class="role-title">Конструктор</div>
+                <div class="role-desc">Створюйте нові тести, завантажуйте карти та наносьте еталонні відповіді</div>
+            </a>
 
-        <div class="footer-info">
-            Синхронізовано з хмарою Firebase Realtime Database
-        </div>
-    </div>
-
-    <!-- Модальне вікно перевірки адміна -->
-    <div id="adminAuthModal" class="modal">
-        <div class="modal-card">
-            <h3>🔑 Вхід в Адмінку</h3>
-            <p style="font-size:0.8rem; color:#64748b; margin-bottom: 1rem;">Потрійна автентифікація</p>
-            
-            <label>1. Admin Password:</label>
-            <input type="password" id="admPass" placeholder="Пароль">
-
-            <label>2. Telegram Username:</label>
-            <input type="text" id="admTg" placeholder="@username">
-
-            <label>3. Google Secret Key:</label>
-            <input type="password" id="admGoogle" placeholder="Google Auth Key">
-
-            <button id="submitAuthBtn" class="btn btn-admin" style="width:100%; margin-top:1rem;">Увійти</button>
-            <button onclick="document.getElementById('adminAuthModal').style.display='none'" class="btn" style="width:100%; background:#e2e8f0; color:#4a5568; margin-top:0.5rem;">Скасувати</button>
+            <!-- Картка Адміністратора / Журналу -->
+            <a href="admin.html" class="role-card admin">
+                <div class="icon">📊</div>
+                <div class="role-title">Журнал оцінок</div>
+                <div class="role-desc">Переглядайте результати учнів, деталі перевірок та аналітику виконаних робіт</div>
+            </a>
         </div>
     </div>
 
-    <!-- Firebase SDK v10 MODULE -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
-            authDomain: "intermap-app.firebaseapp.com",
-            databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "intermap-app",
-            storageBucket: "intermap-app.firebasestorage.app",
-            messagingSenderId: "869707502446",
-            appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f",
-            measurementId: "G-QB0SF133NB"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-
-        // Перевірка обмежень доступу сайту
-        async function checkSiteAccess() {
-            try {
-                const snap = await get(ref(db, 'settings'));
-                if (snap.exists()) {
-                    const settings = snap.val();
-
-                    if (settings.maintenance) {
-                        document.body.innerHTML = `
-                            <div style="text-align:center; padding: 30px; font-family: sans-serif;">
-                                <h1>🚨 Технічне обслуговування</h1>
-                                <p style="color:#64748b; margin-top:10px;">Сайт тимчасово закритий адміністратором.</p>
-                            </div>
-                        `;
-                        return;
-                    }
-
-                    if (settings.title) document.getElementById('mainTitle').innerText = settings.title;
-                    if (settings.notice) document.getElementById('mainNotice').innerText = settings.notice;
-
-                    window.blockStudents = settings.blockStudents || false;
-                    window.blockTeacher = settings.blockTeacher || false;
-                }
-            } catch (e) {
-                console.error("Помилка підключення до налаштувань:", e);
-            }
-        }
-
-        // Авторизація адміна через пароль з БД
-        async function verifyTripleAuth() {
-            const pass = document.getElementById('admPass').value.trim();
-            const tg = document.getElementById('admTg').value.trim();
-            const google = document.getElementById('admGoogle').value.trim();
-
-            try {
-                const authSnap = await get(ref(db, 'auth'));
-                const correctAdminPass = authSnap.exists() ? authSnap.val().adminPassword : 'admin16';
-
-                if (pass === correctAdminPass && tg === '@IvanIntermap' && google === 'G-161013') {
-                    window.location.href = 'admin.html';
-                } else {
-                    alert('❌ Помилка автентифікації! Невірні дані.');
-                }
-            } catch (err) {
-                alert("Помилка зв'язку з БД: " + err.message);
-            }
-        }
-
-        document.getElementById('submitAuthBtn').addEventListener('click', verifyTripleAuth);
-        checkSiteAccess();
-    </script>
-
-    <script>
-        document.getElementById('openAdminModalBtn').addEventListener('click', () => {
-            document.getElementById('adminAuthModal').style.display = 'flex';
-        });
-
-        document.getElementById('startTestBtn').addEventListener('click', () => {
-            if (window.blockStudents) {
-                alert('🔒 Проходження тестів тимчасово заблоковано адміністратором.');
-                return;
-            }
-
-            const code = document.getElementById('quickCodeInput').value.trim();
-            if (code) {
-                window.location.href = `student.html?code=${encodeURIComponent(code)}`;
-            } else {
-                alert('Будь ласка, введіть код тесту!');
-            }
-        });
-
-        document.getElementById('teacherLink').addEventListener('click', (e) => {
-            if (window.blockTeacher) {
-                e.preventDefault();
-                alert('🔒 Доступ до панелі вчителя тимчасово заблоковано адміністратором.');
-            }
-        });
-    </script>
 </body>
 </html>
