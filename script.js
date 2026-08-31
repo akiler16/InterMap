@@ -49,7 +49,7 @@ let studentAnswers = {}; // { taskIndex: point | arrayPoints | polygonArray }
 let isStudentDrawing = false;
 let currentStudentPolygon = [];
 
-// Робимо функції доступними у глобальній області (для inline onclick в HTML)
+// Глобальні експорти для inline-подій HTML
 window.removeTeacherTask = removeTeacherTask;
 window.copyCodeLink = copyCodeLink;
 window.deleteTest = deleteTest;
@@ -57,13 +57,59 @@ window.selectTaskForStudent = selectTaskForStudent;
 window.fetchMyChatId = fetchMyChatId;
 
 // ==========================================
-// 2. ІНІЦІАЛІЗАЦІЯ
+// 2. ІНІЦІАЛІЗАЦІЯ ТА ПЕРЕВІРКА ОБМЕЖЕНЬ (БАН)
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await checkSiteRestrictions();
     initTeacherPanel();
     initStudentPanel();
 });
+
+async function checkSiteRestrictions() {
+    try {
+        const snap = await get(ref(db, 'settings'));
+        if (snap.exists()) {
+            const settings = snap.val();
+
+            // 1. Технічне обслуговування (Повне блокування)
+            if (settings.maintenance) {
+                document.body.innerHTML = `
+                    <div style="text-align:center; padding: 4rem 1rem; font-family: sans-serif;">
+                        <h1 style="font-size: 2.5rem; color: #e11d48;">🚧 Технічне обслуговування</h1>
+                        <p style="font-size: 1.2rem; color: #475569;">Сайт тимчасово недоступний через проведення профілактичних робіт.</p>
+                        <p style="color: #94a3b8;">Будь ласка, завітайте пізніше.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 2. Блокування створення тестів вчителем
+            if (settings.blockTeacher && window.location.pathname.includes('teacher.html')) {
+                const teacherCard = document.querySelector('.card') || document.body;
+                teacherCard.innerHTML = `
+                    <div style="text-align:center; padding: 2rem; color: #e11d48;">
+                        <h2>🔒 Створення тестів заблоковано</h2>
+                        <p style="color: #475569;">Адміністратор тимчасово обновив права та відключив можливість створювати нові тести.</p>
+                    </div>
+                `;
+            }
+
+            // 3. Блокування проходження тестів учням
+            if (settings.blockStudents && window.location.pathname.includes('student.html')) {
+                const studentCard = document.querySelector('.card') || document.body;
+                studentCard.innerHTML = `
+                    <div style="text-align:center; padding: 2rem; color: #e11d48;">
+                        <h2>🔒 Проходження тестів заблоковано</h2>
+                        <p style="color: #475569;">Доступ до виконання тестів тимчасово припинено адміністратором.</p>
+                    </div>
+                `;
+            }
+        }
+    } catch (e) {
+        console.error("Помилка перевірки обмежень сайту:", e);
+    }
+}
 
 // ==========================================
 // 3. ПАНЕЛЬ ВЧИТЕЛЯ ТА TELEGRAM API
@@ -168,7 +214,8 @@ function initTeacherPanel() {
                 id: Date.now(),
                 type: currentTaskType,
                 text: text,
-                points: { plus, minus }
+                pointsPlus: plus,
+                pointsMinus: minus
             };
 
             if (currentTaskType === 'marker') {
@@ -227,7 +274,7 @@ function initTeacherPanel() {
             currentTest.id = code;
             currentTest.title = title;
             currentTest.telegramChatId = telegramChatId;
-            currentTest.createdAt = new Date().toLocaleString('uk-UA');
+            currentTest.createdAt = new Date().toISOString();
 
             await saveTestToFirebase(code, currentTest);
 
@@ -403,15 +450,18 @@ function renderTeacherTasks() {
     list.innerHTML = currentTest.tasks.map((task, index) => {
         let typeBadge = '';
         if (task.type === 'marker') typeBadge = '📌 1 Мітка';
-        else if (task.type === 'multi-marker') typeBadge = `📌📌 ${task.multiPoints.length} Міток`;
-        else if (task.type === 'donut') typeBadge = (task.donut.inner && task.donut.inner.length > 0) ? '🍩 Пончик (з діркою)' : '🟢 Область';
+        else if (task.type === 'multi-marker') typeBadge = `📌📌 ${task.multiPoints ? task.multiPoints.length : 0} Міток`;
+        else if (task.type === 'donut') typeBadge = (task.donut && task.donut.inner && task.donut.inner.length > 0) ? '🍩 Пончик (з діркою)' : '🟢 Область';
+
+        const plus = task.pointsPlus ?? 5;
+        const minus = task.pointsMinus ?? 2;
 
         return `
             <li class="task-item">
                 <div>
                     <b>${index + 1}. ${task.text}</b> 
                     <span style="font-size: 0.85rem; color: #718096; margin-left: 10px;">
-                        (${typeBadge} | +${task.points.plus} / -${task.points.minus} б.)
+                        (${typeBadge} | +${plus} / -${minus} б.)
                     </span>
                 </div>
                 <button onclick="removeTeacherTask(${index})" class="btn danger-btn" style="padding: 4px 10px; font-size: 0.8rem;">Видалити</button>
@@ -472,10 +522,7 @@ async function deleteTest(code) {
     }
 
     try {
-        const testRef = ref(db, 'tests/' + code);
-        const resultsRef = ref(db, 'results/' + code);
-        await remove(testRef);
-        await remove(resultsRef);
+        await remove(ref(db, 'tests/' + code));
     } catch (error) {
         console.error("Помилка видалення з Firebase:", error);
     }
@@ -586,12 +633,12 @@ function handleStudentPointerDown(e) {
             studentAnswers[activeTaskIndex] = [];
         }
         
-        if (studentAnswers[activeTaskIndex].length < task.multiPoints.length) {
+        if (studentAnswers[activeTaskIndex].length < (task.multiPoints ? task.multiPoints.length : 0)) {
             studentAnswers[activeTaskIndex].push(point);
             redrawStudentCanvas();
             renderStudentTasks();
         } else {
-            alert(`Ви вже поставили всі ${task.multiPoints.length} міток! Щоб очистити, оберіть завдання знову.`);
+            alert(`Ви вже поставили всі мітки! Щоб змінити, виберіть завдання заново.`);
         }
 
     } else if (task.type === 'donut') {
@@ -675,7 +722,7 @@ function renderStudentTasks() {
         let isDone = false;
 
         if (task.type === 'marker') isDone = ans !== undefined;
-        else if (task.type === 'multi-marker') isDone = Array.isArray(ans) && ans.length === task.multiPoints.length;
+        else if (task.type === 'multi-marker') isDone = Array.isArray(ans) && ans.length === (task.multiPoints ? task.multiPoints.length : 0);
         else if (task.type === 'donut') isDone = Array.isArray(ans) && ans.length > 2;
 
         const isActive = activeTaskIndex === index;
@@ -687,7 +734,8 @@ function renderStudentTasks() {
         let countInfo = '';
         if (task.type === 'multi-marker') {
             const currentCount = Array.isArray(ans) ? ans.length : 0;
-            countInfo = ` (${currentCount}/${task.multiPoints.length} точок)`;
+            const targetCount = task.multiPoints ? task.multiPoints.length : 0;
+            countInfo = ` (${currentCount}/${targetCount} точок)`;
         }
 
         return `
@@ -709,7 +757,8 @@ function selectTaskForStudent(index) {
             studentInstruction.innerHTML = `📍 <b>Завдання №${index + 1}:</b> Натисніть на карту, щоб поставити 1 точкову мітку.`;
         } else if (task.type === 'multi-marker') {
             const currentCount = Array.isArray(studentAnswers[index]) ? studentAnswers[index].length : 0;
-            studentInstruction.innerHTML = `📌📌 <b>Завдання №${index + 1}:</b> Поставте <b>${task.multiPoints.length}</b> точок на карті (поставлено: ${currentCount}).`;
+            const targetCount = task.multiPoints ? task.multiPoints.length : 0;
+            studentInstruction.innerHTML = `📌📌 <b>Завдання №${index + 1}:</b> Поставте <b>${targetCount}</b> точок на карті (поставлено: ${currentCount}).`;
         } else {
             studentInstruction.innerHTML = `🟢 <b>Завдання №${index + 1}:</b> Затисніть та обведіть правильну область на карті.`;
         }
@@ -723,7 +772,10 @@ function selectTaskForStudent(index) {
 
 async function checkStudentWork() {
     const nameInput = document.getElementById('studentName');
+    const classInput = document.getElementById('studentClass');
+
     const name = nameInput ? nameInput.value.trim() : '';
+    const studentClass = classInput ? classInput.value.trim() : '-';
 
     if (!name) {
         alert("Введіть своє Ім'я та Прізвище!");
@@ -735,7 +787,10 @@ async function checkStudentWork() {
     let report = ``;
 
     loadedTest.tasks.forEach((task, index) => {
-        maxScore += task.points.plus;
+        const plus = task.pointsPlus ?? (task.points ? task.points.plus : 5);
+        const minus = task.pointsMinus ?? (task.points ? task.points.minus : 2);
+
+        maxScore += plus;
         const ans = studentAnswers[index];
 
         if (ans) {
@@ -747,7 +802,7 @@ async function checkStudentWork() {
                 isCorrect = Math.sqrt(dx * dx + dy * dy) <= 3.5;
 
             } else if (task.type === 'multi-marker') {
-                if (Array.isArray(ans) && ans.length === task.multiPoints.length) {
+                if (Array.isArray(ans) && task.multiPoints && ans.length === task.multiPoints.length) {
                     let matched = 0;
                     task.multiPoints.forEach(targetPt => {
                         const hasMatch = ans.some(stPt => {
@@ -765,15 +820,15 @@ async function checkStudentWork() {
             }
 
             if (isCorrect) {
-                totalScore += task.points.plus;
-                report += `Завдання ${index + 1}: Вірно (+${task.points.plus} б.)\n`;
+                totalScore += plus;
+                report += `Завдання ${index + 1}: Вірно (+${plus} б.)\n`;
             } else {
-                totalScore -= task.points.minus;
-                report += `Завдання ${index + 1}: Помилка (-${task.points.minus} б.)\n`;
+                totalScore -= minus;
+                report += `Завдання ${index + 1}: Помилка (-${minus} б.)\n`;
             }
         } else {
-            totalScore -= task.points.minus;
-            report += `Завдання ${index + 1}: Не виконано (-${task.points.minus} б.)\n`;
+            totalScore -= minus;
+            report += `Завдання ${index + 1}: Не виконано (-${minus} б.)\n`;
         }
     });
 
@@ -785,12 +840,14 @@ async function checkStudentWork() {
     if (scoreSummary) scoreSummary.innerHTML = `Набрано балів: ${totalScore} з ${maxScore} можливих`;
     if (detailedReport) detailedReport.innerText = report;
 
-    await sendStudentResultsToFirebase(loadedTestCode, name, totalScore, maxScore, report);
+    // Збереження в загальну базу результатів (для Admin Panel)
+    await sendStudentResultsToFirebase(loadedTestCode, name, studentClass, totalScore, maxScore, report);
 
+    // Відправка в Telegram Вчителю
     if (loadedTest.telegramChatId && loadedTest.telegramChatId.trim().length > 0) {
         const message = `📊 <b>Новий результат тесту!</b>\n\n` +
                         `📖 <b>Тест:</b> ${loadedTest.title}\n` +
-                        `👤 <b>Учень:</b> ${name}\n` +
+                        `👤 <b>Учень:</b> ${name} (${studentClass})\n` +
                         `🏆 <b>Результат:</b> ${totalScore} з ${maxScore} балів\n\n` +
                         `📝 <b>Деталізація:</b>\n${report}`;
                         
@@ -801,38 +858,17 @@ async function checkStudentWork() {
 }
 
 function sendTelegramNotification(chatId, messageText) {
-    if (!chatId) {
-        console.warn("⚠️ Chat ID не вказано.");
-        return;
-    }
-
-    const cleanChatId = chatId.toString().trim();
-
-    const payload = {
-        chat_id: cleanChatId,
-        text: messageText,
-        parse_mode: 'HTML'
-    };
+    if (!chatId) return;
 
     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.ok) {
-            console.log("✅ Результати успішно надіслано в Telegram!");
-        } else {
-            console.error("❌ Помилка Telegram API:", data);
-            alert(`Помилка Telegram: ${data.description}\nПеревірте, чи ви натиснули /start у боті.`);
-        }
-    })
-    .catch(err => {
-        console.error("❌ Мережева помилка відправки в Telegram:", err);
-    });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            chat_id: chatId.toString().trim(),
+            text: messageText,
+            parse_mode: 'HTML'
+        })
+    }).catch(err => console.error("❌ Помилка Telegram API:", err));
 }
 
 function checkAreaCoverage(studentPoly, teacherDonut) {
@@ -873,8 +909,7 @@ function isPointInPolygon(point, polygon) {
 
 async function saveTestToFirebase(testCode, testData) {
     try {
-        const testRef = ref(db, 'tests/' + testCode);
-        await set(testRef, testData);
+        await set(ref(db, 'tests/' + testCode), testData);
         alert(`✅ Тест ${testCode} успішно опубліковано у хмарі Firebase!`);
     } catch (error) {
         console.error("Firebase Error:", error);
@@ -884,9 +919,7 @@ async function saveTestToFirebase(testCode, testData) {
 
 async function loadTestFromFirebase(testCode) {
     try {
-        const dbRef = ref(db);
-        const snapshot = await get(child(dbRef, `tests/${testCode}`));
-
+        const snapshot = await get(child(ref(db), `tests/${testCode}`));
         if (snapshot.exists()) {
             return snapshot.val();
         }
@@ -896,24 +929,26 @@ async function loadTestFromFirebase(testCode) {
     return null;
 }
 
-async function sendStudentResultsToFirebase(testCode, studentName, score, maxScore, reportDetails) {
+async function sendStudentResultsToFirebase(testCode, studentName, studentClass, score, maxScore, reportDetails) {
     try {
-        const resultsListRef = ref(db, `results/${testCode}`);
-        const newResultRef = push(resultsListRef);
-        
-        await set(newResultRef, {
+        await push(ref(db, 'results'), {
+            testCode: testCode,
             studentName: studentName,
+            studentClass: studentClass,
             score: score,
             maxScore: maxScore,
             report: reportDetails,
-            timestamp: new Date().toLocaleString('uk-UA')
+            date: new Date().toISOString()
         });
     } catch (error) {
         console.error("Firebase Send Results Error:", error);
     }
 }
 
-// Допоміжні функції для малювання
+// ==========================================
+// 7. ДОПОМІЖНІ ФУНКЦІЇ МАЛЮВАННЯ ТА РОЗРАХУНКУ
+// ==========================================
+
 function drawPointOnContext(ctx, point, w, h, color, label = '') {
     const px = (point.x / 100) * w;
     const py = (point.y / 100) * h;
