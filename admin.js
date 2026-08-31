@@ -19,6 +19,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+let allResultsData = {};
+
 // ==========================================
 // 2. ГЛОБАЛЬНІ ФУНКЦІЇ ТА НАВІГАЦІЯ
 // ==========================================
@@ -35,7 +37,7 @@ window.switchTab = (tabName, event) => {
     }
 };
 
-// Запис системних логів у БД
+// Запис дій адміна в БД (Audit Log)
 async function logAction(actionText) {
     try {
         await push(ref(db, 'logs'), {
@@ -92,13 +94,13 @@ window.updateTaskPoints = async (testId, taskIndex, field, value) => {
         await update(ref(db, `tests/${testId}/tasks/${taskIndex}`), {
             [field]: numVal
         });
-        await logAction(`Змінено бали ${field} для тесту ${testId}, завдання #${taskIndex + 1} на ${numVal}`);
+        await logAction(`Змінено ${field} для тесту ${testId}, завдання #${taskIndex + 1} на ${numVal}`);
     } catch (err) {
         alert("Помилка оновлення балів: " + err.message);
     }
 };
 
-// Видалення запису про результат учня з журналу
+// Видалення запису про результат учня
 window.deleteResultsRecord = async (resultId) => {
     if (confirm("Видалити цей результат із журналу?")) {
         try {
@@ -134,6 +136,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Оголошення сайту
     const announcementForm = document.getElementById('siteAnnouncementForm');
     if (announcementForm) announcementForm.addEventListener('submit', saveSiteAnnouncement);
+
+    // Пошук у журналі
+    document.getElementById('journalSearchInput')?.addEventListener('input', (e) => {
+        renderJournalTable(e.target.value.toLowerCase().trim());
+    });
 });
 
 // ==========================================
@@ -265,62 +272,78 @@ function listenToTests() {
     });
 }
 
-// Слухач журналу виконаних тестів учнями
 function listenToResults() {
-    const journalContainer = document.getElementById('studentJournalContainer');
-    if (!journalContainer) return;
-
     onValue(ref(db, 'results'), (snapshot) => {
+        const journalContainer = document.getElementById('studentJournalContainer');
+        const resultsEl = document.getElementById('statTotalResults');
+
         if (!snapshot.exists()) {
-            journalContainer.innerHTML = '<p style="text-align:center; padding:1rem;">Журнал відповідей порожній.</p>';
-            const resultsEl = document.getElementById('statTotalResults');
+            allResultsData = {};
+            if (journalContainer) journalContainer.innerHTML = '<p style="text-align:center; padding:1rem;">Журнал відповідей порожній.</p>';
             if (resultsEl) resultsEl.innerText = "0";
             return;
         }
 
-        const data = snapshot.val();
-        const keys = Object.keys(data).reverse();
+        allResultsData = snapshot.val();
+        if (resultsEl) resultsEl.innerText = Object.keys(allResultsData).length;
 
-        const resultsEl = document.getElementById('statTotalResults');
-        if (resultsEl) resultsEl.innerText = keys.length;
-
-        let tableHtml = `
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Дата</th>
-                            <th>Учень</th>
-                            <th>Клас</th>
-                            <th>Код тесту</th>
-                            <th>Оцінка / Бали</th>
-                            <th>Дії</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-
-        keys.forEach(resId => {
-            const item = data[resId];
-            const dateStr = item.date ? new Date(item.date).toLocaleString('uk-UA') : '-';
-            tableHtml += `
-                <tr>
-                    <td>${dateStr}</td>
-                    <td><b>${item.studentName || 'Анонім'}</b></td>
-                    <td>${item.studentClass || '-'}</td>
-                    <td><code>${item.testCode || '-'}</code></td>
-                    <td><b style="color:#2563eb;">${item.score ?? 0}</b> / ${item.maxScore ?? 0}</td>
-                    <td><button onclick="deleteResultsRecord('${resId}')" class="btn danger-btn" style="padding:2px 8px; font-size:0.8rem;">Видалити</button></td>
-                </tr>
-            `;
-        });
-
-        tableHtml += `</tbody></table></div>`;
-        journalContainer.innerHTML = tableHtml;
+        renderJournalTable();
     });
 }
 
-// Слухач дій системи (Audit Log)
+function renderJournalTable(filterQuery = '') {
+    const journalContainer = document.getElementById('studentJournalContainer');
+    if (!journalContainer) return;
+
+    const keys = Object.keys(allResultsData).reverse();
+    let filteredKeys = keys.filter(resId => {
+        const item = allResultsData[resId];
+        const name = (item.studentName || '').toLowerCase();
+        const cls = (item.studentClass || '').toLowerCase();
+        const code = (item.testCode || '').toLowerCase();
+        return name.includes(filterQuery) || cls.includes(filterQuery) || code.includes(filterQuery);
+    });
+
+    if (filteredKeys.length === 0) {
+        journalContainer.innerHTML = '<p style="text-align:center; padding:1rem; color:#64748b;">Нічого не знайдено.</p>';
+        return;
+    }
+
+    let tableHtml = `
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Учень</th>
+                        <th>Клас</th>
+                        <th>Код тесту</th>
+                        <th>Бали</th>
+                        <th>Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    filteredKeys.forEach(resId => {
+        const item = allResultsData[resId];
+        const dateStr = item.date ? new Date(item.date).toLocaleString('uk-UA') : '-';
+        tableHtml += `
+            <tr>
+                <td>${dateStr}</td>
+                <td><b>${item.studentName || 'Анонім'}</b></td>
+                <td>${item.studentClass || '-'}</td>
+                <td><code>${item.testCode || '-'}</code></td>
+                <td><b style="color:#2563eb;">${item.score ?? 0}</b> / ${item.maxScore ?? 0}</td>
+                <td><button onclick="deleteResultsRecord('${resId}')" class="btn danger-btn" style="padding:2px 8px; font-size:0.8rem;">Видалити</button></td>
+            </tr>
+        `;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+    journalContainer.innerHTML = tableHtml;
+}
+
 function listenToLogs() {
     const logsContainer = document.getElementById('auditLogsContainer');
     if (!logsContainer) return;
