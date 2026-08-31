@@ -32,8 +32,8 @@ window.switchTab = (tabName, event) => {
     const targetTab = document.getElementById(`tab-${tabName}`);
     if (targetTab) targetTab.classList.add('active');
     
-    if (event && event.target) {
-        event.target.classList.add('active');
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
     }
 };
 
@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const securityForm = document.getElementById('securityForm');
     if (securityForm) securityForm.addEventListener('submit', handlePasswordChange);
 
-    // Слухачі тумблерів доступу
+    // Слухачі тумблерів обмеження доступу (Бан / Розбан / Maintenance)
     document.getElementById('maintenanceToggle')?.addEventListener('change', (e) => toggleAccess('maintenance', e.target.checked));
     document.getElementById('blockStudentsToggle')?.addEventListener('change', (e) => toggleAccess('blockStudents', e.target.checked));
     document.getElementById('blockTeacherToggle')?.addEventListener('change', (e) => toggleAccess('blockTeacher', e.target.checked));
@@ -180,7 +180,7 @@ async function handlePasswordChange(e) {
             updatedAt: new Date().toISOString()
         });
         await logAction("Оновлено паролі входу для вчителя та адміна");
-        alert("✅ Паролі входу для вчителя та адмінки успішно оновлено в БД!");
+        alert("✅ Паролі входу успішно оновлено в БД!");
     } catch (err) {
         alert("Помилка збереження паролів: " + err.message);
     }
@@ -355,7 +355,7 @@ function listenToLogs() {
         }
 
         const logs = snapshot.val();
-        const keys = Object.keys(logs).reverse().slice(0, 15);
+        const keys = Object.keys(logs).reverse().slice(0, 20);
 
         let html = '<ul style="list-style:none; padding:0; font-size:0.85rem;">';
         keys.forEach(k => {
@@ -371,7 +371,7 @@ function listenToLogs() {
 }
 
 // ==========================================
-// 6. ОБМЕЖЕННЯ ДОСТУПУ ТА НАЛАШТУВАННЯ
+// 6. ОБМЕЖЕННЯ ДОСТУПУ (БАН / РОЗБАН / РЕЖИМИ)
 // ==========================================
 
 async function loadSiteSettings() {
@@ -402,10 +402,10 @@ async function loadSiteSettings() {
 async function toggleAccess(field, value) {
     try {
         await update(ref(db, 'settings'), { [field]: value });
-        await logAction(`Змінено статус доступу ${field} на ${value}`);
-        alert(`Зміни збережено: ${field} = ${value}`);
+        await logAction(`Змінено статус ${field} на ${value ? 'УВІМКНЕНО (Заблоковано)' : 'ВИМКНЕНО (Розблоковано)'}`);
+        alert(`Зміни збережено! Режим ${field}: ${value ? 'Заблоковано' : 'Активно'}`);
     } catch (err) {
-        alert("Помилка оновлення прав доступу: " + err.message);
+        alert("Помилка оновлення доступу: " + err.message);
     }
 }
 
