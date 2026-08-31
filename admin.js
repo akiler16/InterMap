@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, get, set, update, remove, onValue, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ==========================================
 // 1. КОНФІГУРАЦІЯ ТА ІНІЦІАЛІЗАЦІЯ FIREBASE
@@ -20,7 +20,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // ==========================================
-// 2. ГЛОБАЛЬНІ ФУНКЦІЇ (НАВІГАЦІЯ ТА ДІЇ)
+// 2. ГЛОБАЛЬНІ ФУНКЦІЇ ТА НАВІГАЦІЯ
 // ==========================================
 
 window.switchTab = (tabName, event) => {
@@ -35,15 +35,51 @@ window.switchTab = (tabName, event) => {
     }
 };
 
-// Видалення тесту з історії
+// Запис системних логів у БД
+async function logAction(actionText) {
+    try {
+        await push(ref(db, 'logs'), {
+            action: actionText,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error("Помилка створення логу:", e);
+    }
+}
+
+// Видалення тесту
 window.deleteTest = async (testId) => {
     if (confirm(`Ви дійсно бажаєте безповоротно видалити тест з ID: ${testId}?`)) {
         try {
             await remove(ref(db, `tests/${testId}`));
+            await logAction(`Видалено тест ID: ${testId}`);
             alert("✅ Тест успішно видалено!");
         } catch (err) {
             alert("Помилка видалення тесту: " + err.message);
         }
+    }
+};
+
+// Клонування тесту в 1 клік
+window.cloneTest = async (testId) => {
+    try {
+        const snap = await get(ref(db, `tests/${testId}`));
+        if (snap.exists()) {
+            const originalTest = snap.val();
+            const newCode = 'COPY-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+            
+            const clonedTest = {
+                ...originalTest,
+                title: `${originalTest.title || 'Тест'} (Клоновано)`,
+                createdAt: new Date().toISOString()
+            };
+
+            await set(ref(db, `tests/${newCode}`), clonedTest);
+            await logAction(`Клоновано тест ${testId} у новий ID: ${newCode}`);
+            alert(`✅ Тест успішно клоновано! Новий код: ${newCode}`);
+        }
+    } catch (err) {
+        alert("Помилка клонування тесту: " + err.message);
     }
 };
 
@@ -56,17 +92,33 @@ window.updateTaskPoints = async (testId, taskIndex, field, value) => {
         await update(ref(db, `tests/${testId}/tasks/${taskIndex}`), {
             [field]: numVal
         });
+        await logAction(`Змінено бали ${field} для тесту ${testId}, завдання #${taskIndex + 1} на ${numVal}`);
     } catch (err) {
         alert("Помилка оновлення балів: " + err.message);
     }
 };
 
+// Видалення запису про результат учня з журналу
+window.deleteResultsRecord = async (resultId) => {
+    if (confirm("Видалити цей результат із журналу?")) {
+        try {
+            await remove(ref(db, `results/${resultId}`));
+            await logAction(`Видалено результат учня ID: ${resultId}`);
+            alert("✅ Запис видалено!");
+        } catch (err) {
+            alert("Помилка видалення: " + err.message);
+        }
+    }
+};
+
 // ==========================================
-// 3. ІНІЦІАЛІЗАЦІЯ ТА СЛУХАЧІ СТОРІНКИ
+// 3. ІНІЦІАЛІЗАЦІЯ СТОРІНКИ
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
     listenToTests();
+    listenToResults();
+    listenToLogs();
     loadSecuritySettings();
     loadSiteSettings();
 
@@ -96,12 +148,8 @@ async function loadSecuritySettings() {
             const teacherPassInput = document.getElementById('teacherPasswordInput');
             const adminPassInput = document.getElementById('adminPasswordInput');
 
-            if (teacherPassInput && authData.teacherPassword) {
-                teacherPassInput.value = authData.teacherPassword;
-            }
-            if (adminPassInput && authData.adminPassword) {
-                adminPassInput.value = authData.adminPassword;
-            }
+            if (teacherPassInput && authData.teacherPassword) teacherPassInput.value = authData.teacherPassword;
+            if (adminPassInput && authData.adminPassword) adminPassInput.value = authData.adminPassword;
         }
     } catch (e) {
         console.error("Помилка завантаження паролів:", e);
@@ -124,6 +172,7 @@ async function handlePasswordChange(e) {
             adminPassword: adminPass,
             updatedAt: new Date().toISOString()
         });
+        await logAction("Оновлено паролі входу для вчителя та адміна");
         alert("✅ Паролі входу для вчителя та адмінки успішно оновлено в БД!");
     } catch (err) {
         alert("Помилка збереження паролів: " + err.message);
@@ -131,7 +180,7 @@ async function handlePasswordChange(e) {
 }
 
 // ==========================================
-// 5. КОНТРОЛЬ ТЕСТІВ ТА REALTIME-АНАЛІТИКА
+// 5. РЕАЛЬНИЙ ЧАС: ТЕСТИ, ЖУРНАЛ ТА ЛОГИ
 // ==========================================
 
 function listenToTests() {
@@ -168,7 +217,10 @@ function listenToTests() {
                             <h3 style="margin:0;">${test.title || 'Без назви'}</h3>
                             <small style="color:#64748b;">ID: <code>${testId}</code> | Створено: ${dateStr}</small>
                         </div>
-                        <button onclick="deleteTest('${testId}')" class="btn danger-btn">Видалити тест</button>
+                        <div>
+                            <button onclick="cloneTest('${testId}')" class="btn primary-btn" style="margin-right: 5px;">📋 Клонувати</button>
+                            <button onclick="deleteTest('${testId}')" class="btn danger-btn">🗑️ Видалити</button>
+                        </div>
                     </div>
 
                     ${test.teacherChatId ? `<p style="font-size:0.85rem; margin-top:5px;"><b>Telegram Chat ID:</b> ${test.teacherChatId}</p>` : ''}
@@ -213,8 +265,90 @@ function listenToTests() {
     });
 }
 
+// Слухач журналу виконаних тестів учнями
+function listenToResults() {
+    const journalContainer = document.getElementById('studentJournalContainer');
+    if (!journalContainer) return;
+
+    onValue(ref(db, 'results'), (snapshot) => {
+        if (!snapshot.exists()) {
+            journalContainer.innerHTML = '<p style="text-align:center; padding:1rem;">Журнал відповідей порожній.</p>';
+            const resultsEl = document.getElementById('statTotalResults');
+            if (resultsEl) resultsEl.innerText = "0";
+            return;
+        }
+
+        const data = snapshot.val();
+        const keys = Object.keys(data).reverse();
+
+        const resultsEl = document.getElementById('statTotalResults');
+        if (resultsEl) resultsEl.innerText = keys.length;
+
+        let tableHtml = `
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Учень</th>
+                            <th>Клас</th>
+                            <th>Код тесту</th>
+                            <th>Оцінка / Бали</th>
+                            <th>Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        keys.forEach(resId => {
+            const item = data[resId];
+            const dateStr = item.date ? new Date(item.date).toLocaleString('uk-UA') : '-';
+            tableHtml += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><b>${item.studentName || 'Анонім'}</b></td>
+                    <td>${item.studentClass || '-'}</td>
+                    <td><code>${item.testCode || '-'}</code></td>
+                    <td><b style="color:#2563eb;">${item.score ?? 0}</b> / ${item.maxScore ?? 0}</td>
+                    <td><button onclick="deleteResultsRecord('${resId}')" class="btn danger-btn" style="padding:2px 8px; font-size:0.8rem;">Видалити</button></td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `</tbody></table></div>`;
+        journalContainer.innerHTML = tableHtml;
+    });
+}
+
+// Слухач дій системи (Audit Log)
+function listenToLogs() {
+    const logsContainer = document.getElementById('auditLogsContainer');
+    if (!logsContainer) return;
+
+    onValue(ref(db, 'logs'), (snapshot) => {
+        if (!snapshot.exists()) {
+            logsContainer.innerHTML = '<p style="color:#64748b;">Журнал подій порожній.</p>';
+            return;
+        }
+
+        const logs = snapshot.val();
+        const keys = Object.keys(logs).reverse().slice(0, 15);
+
+        let html = '<ul style="list-style:none; padding:0; font-size:0.85rem;">';
+        keys.forEach(k => {
+            const log = logs[k];
+            const time = log.timestamp ? new Date(log.timestamp).toLocaleTimeString('uk-UA') : '';
+            html += `<li style="padding:6px 0; border-bottom:1px dashed #e2e8f0;">
+                <span style="color:#64748b;">[${time}]</span> ${log.action}
+            </li>`;
+        });
+        html += '</ul>';
+        logsContainer.innerHTML = html;
+    });
+}
+
 // ==========================================
-// 6. КЕРУВАННЯ ОБМЕЖЕННЯМИ ТА НАЛАШТУВАННЯМИ
+// 6. ОБМЕЖЕННЯ ДОСТУПУ ТА НАЛАШТУВАННЯ
 // ==========================================
 
 async function loadSiteSettings() {
@@ -245,6 +379,7 @@ async function loadSiteSettings() {
 async function toggleAccess(field, value) {
     try {
         await update(ref(db, 'settings'), { [field]: value });
+        await logAction(`Змінено статус доступу ${field} на ${value}`);
         alert(`Зміни збережено: ${field} = ${value}`);
     } catch (err) {
         alert("Помилка оновлення прав доступу: " + err.message);
@@ -261,6 +396,7 @@ async function saveSiteAnnouncement(e) {
             title: titleInput ? titleInput.value : '',
             notice: noticeInput ? noticeInput.value : ''
         });
+        await logAction("Оновлено оголошення та заголовок сайту");
         alert("✅ Налаштування сайту збережено!");
     } catch (err) {
         alert("Помилка збереження оголошення: " + err.message);
@@ -268,7 +404,7 @@ async function saveSiteAnnouncement(e) {
 }
 
 // ==========================================
-// 7. ОНОВЛЕННЯ СТАТИСТИКИ
+// 7. СТАТИСТИКА
 // ==========================================
 
 function updateStats(testsCount, tasksCount) {
