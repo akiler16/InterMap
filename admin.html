@@ -12,9 +12,9 @@
         <aside class="sidebar">
             <div class="logo">⚙️ Intermap Admin</div>
             <nav class="nav-menu">
-                <button class="nav-btn active" onclick="switchTab('licenses')">🛡️ Ліцензії & DRM</button>
+                <button class="nav-btn active" onclick="switchTab('tests')">🗺️ Контроль Тестів & Історія</button>
+                <button class="nav-btn" onclick="switchTab('security')">🔑 Безпека & Паролі</button>
                 <button class="nav-btn" onclick="switchTab('settings')">⚙️ Налаштування Сайту</button>
-                <button class="nav-btn" onclick="switchTab('maps')">🗺️ Карти та Завдання</button>
                 <button class="nav-btn" onclick="switchTab('stats')">📊 Статистика</button>
             </nav>
             <a href="index.html" class="exit-btn">🚪 Вийти на головну</a>
@@ -23,78 +23,76 @@
         <!-- Основний контент -->
         <main class="main-content">
 
-            <!-- Вкладка 1: Управління ліцензіями -->
-            <section id="tab-licenses" class="tab-content active">
-                <h1>🛡️ Управління Ліцензійними Ключами</h1>
-                
-                <div class="card">
-                    <h2>➕ Створити / Оновити Ключ</h2>
-                    <form id="createLicenseForm">
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Ключ ліцензії:</label>
-                                <input type="text" id="licKey" placeholder="GEO-2026-X89K" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Пароль вчителя:</label>
-                                <input type="text" id="licPass" placeholder="teacher_pass" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Власник (ПІБ / Школа):</label>
-                                <input type="text" id="licOwner" placeholder="Учитель Географії 7-А" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Дійсний З:</label>
-                                <input type="date" id="licValidFrom" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Дійсний ДО:</label>
-                                <input type="date" id="licValidTo" required>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn primary-btn">Зберегти Ліцензію</button>
-                    </form>
-                </div>
-
-                <div class="card">
-                    <div class="header-flex">
-                        <h2>📋 База Ключів</h2>
-                        <button id="refreshKeysBtn" class="btn secondary-btn">🔄 Оновити</button>
-                    </div>
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Ключ</th>
-                                    <th>Власник</th>
-                                    <th>Пароль</th>
-                                    <th>Термін дії</th>
-                                    <th>Статус</th>
-                                    <th>Прив'язка HWID</th>
-                                    <th>Дії</th>
-                                </tr>
-                            </thead>
-                            <tbody id="licensesTableBody">
-                                <tr><td colspan="7" class="loading">Завантаження...</td></tr>
-                            </tbody>
-                        </table>
+            <!-- Вкладка 1: Контроль Тестів та Історія -->
+            <section id="tab-tests" class="tab-content active">
+                <h1>🗺️ Контроль та Історія Створених Тестів</h1>
+                <p style="color: #64748b; margin-bottom: 1.5rem; font-size: 0.9rem;">
+                    Усі зміни балів та штрафів зберігаються в реальному часі та одразу діють для учнів.
+                </p>
+                <div id="testsHistoryList">
+                    <div class="card">
+                        <p class="loading" style="text-align:center;">Завантаження тестів з бази даних...</p>
                     </div>
                 </div>
             </section>
 
-            <!-- Вкладка 2: Налаштування сайту -->
+            <!-- Вкладка 2: Безпека та Зміна паролів -->
+            <section id="tab-security" class="tab-content">
+                <h1>🔑 Зміна Паролів Доступу</h1>
+                <div class="card">
+                    <h2>Управління паролями входу</h2>
+                    <form id="securityForm">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="teacherPasswordInput">Пароль Панелі Вчителя:</label>
+                                <input type="text" id="teacherPasswordInput" placeholder="Введіть новий пароль вчителя" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="adminPasswordInput">Пароль Адмін-панелі:</label>
+                                <input type="text" id="adminPasswordInput" placeholder="Введіть новий пароль адміна" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn primary-btn" style="margin-top: 1rem;">Зберегти паролі</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Вкладка 3: Налаштування сайту та обмеження доступу -->
             <section id="tab-settings" class="tab-content">
                 <h1>⚙️ Глобальні Налаштування Сайту</h1>
                 
                 <div class="card">
-                    <h2>🚨 Системні режими</h2>
+                    <h2>🔒 Обмеження доступу та Системні Режими</h2>
+                    
                     <div class="setting-item">
                         <div>
                             <strong>Режим технічного обслуговування (Maintenance Mode)</strong>
-                            <p class="sub-text">Блокує доступ для учнів та вчителів на час оновлень.</p>
+                            <p class="sub-text">Повністю блокує доступ до всього сайту для учнів та вчителів.</p>
                         </div>
                         <label class="switch">
                             <input type="checkbox" id="maintenanceToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div>
+                            <strong>Заблокувати проходження тестів для учнів</strong>
+                            <p class="sub-text">Учні не зможуть відкривати та виконувати тести.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="blockStudentsToggle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div>
+                            <strong>Заблокувати створення нових тестів</strong>
+                            <p class="sub-text">Вчителі не зможуть публікувати нові тести.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="blockTeacherToggle">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -104,33 +102,15 @@
                     <h2>📢 Оголошення на головній сторінці</h2>
                     <form id="siteAnnouncementForm">
                         <div class="form-group">
-                            <label>Заголовок сайту:</label>
+                            <label for="siteTitleInput">Заголовок сайту:</label>
                             <input type="text" id="siteTitleInput" placeholder="Intermap — Інтерактивні Карти">
                         </div>
                         <div class="form-group" style="margin-top: 1rem;">
-                            <label>Повідомлення для користувачів (Banner):</label>
-                            <textarea id="siteNoticeInput" rows="3" placeholder="Наприклад: 1 вересня оновлення нових контурних карт!"></textarea>
+                            <label for="siteNoticeInput">Повідомлення для користувачів (Banner):</label>
+                            <textarea id="siteNoticeInput" rows="3" placeholder="Наприклад: Оновлено інтерактивні контурні карти!"></textarea>
                         </div>
                         <button type="submit" class="btn primary-btn" style="margin-top: 1rem;">Оновити контент</button>
                     </form>
-                </div>
-            </section>
-
-            <!-- Вкладка 3: Карти та Завдання -->
-            <section id="tab-maps" class="tab-content">
-                <h1>🗺️ Управління Модулями Карт</h1>
-                <div class="card">
-                    <h2>📌 Доступні карти для учнів</h2>
-                    <div id="mapsControlList">
-                        <div class="setting-item">
-                            <span>🗺️ Контурна карта України (7 Клас)</span>
-                            <button class="btn secondary-btn" onclick="toggleMapStatus('ukraine_7')">Увімкнена</button>
-                        </div>
-                        <div class="setting-item">
-                            <span>🌍 Фізична карта світу</span>
-                            <button class="btn secondary-btn" onclick="toggleMapStatus('world_phys')">Увімкнена</button>
-                        </div>
-                    </div>
                 </div>
             </section>
 
@@ -139,16 +119,12 @@
                 <h1>📊 Аналітика системи</h1>
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-number" id="statTotalKeys">0</div>
-                        <div class="stat-label">Всього ключі</div>
+                        <div class="stat-number" id="statTotalTests">0</div>
+                        <div class="stat-label">Всього тестів</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="statActiveKeys">0</div>
-                        <div class="stat-label">Активних ліцензій</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="statBoundDevices">0</div>
-                        <div class="stat-label">Активованих пристроїв</div>
+                        <div class="stat-number" id="statTotalTasks">0</div>
+                        <div class="stat-label">Створено завдань</div>
                     </div>
                 </div>
             </section>
