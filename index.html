@@ -70,13 +70,8 @@
             border-color: #cbd5e0;
         }
 
-        .card-teacher {
-            border-top: 6px solid #3182ce;
-        }
-
-        .card-student {
-            border-top: 6px solid #38a169;
-        }
+        .card-teacher { border-top: 6px solid #3182ce; }
+        .card-student { border-top: 6px solid #38a169; }
 
         .card-icon {
             font-size: 2.5rem;
@@ -109,27 +104,11 @@
             transition: background 0.2s, transform 0.1s;
         }
 
-        .btn:active {
-            transform: scale(0.98);
-        }
-
-        .btn-teacher {
-            background-color: #3182ce;
-            color: white;
-        }
-
-        .btn-teacher:hover {
-            background-color: #2b6cb0;
-        }
-
-        .btn-student {
-            background-color: #38a169;
-            color: white;
-        }
-
-        .btn-student:hover {
-            background-color: #2f855a;
-        }
+        .btn:active { transform: scale(0.98); }
+        .btn-teacher { background-color: #3182ce; color: white; }
+        .btn-teacher:hover { background-color: #2b6cb0; }
+        .btn-student { background-color: #38a169; color: white; }
+        .btn-student:hover { background-color: #2f855a; }
 
         .btn-admin {
             background-color: #0f172a;
@@ -138,9 +117,7 @@
             margin: 10px auto 0 auto;
         }
 
-        .btn-admin:hover {
-            background-color: #1e293b;
-        }
+        .btn-admin:hover { background-color: #1e293b; }
 
         .code-input-group {
             width: 100%;
@@ -193,29 +170,16 @@
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
         }
 
-        .modal-card h3 {
-            margin-bottom: 5px;
-            color: #1a202c;
-        }
-
-        .modal-card label {
-            display: block;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin: 10px 0 4px 0;
-            color: #4a5568;
-        }
-
-        .modal-card input {
-            text-align: left;
-        }
+        .modal-card h3 { margin-bottom: 5px; color: #1a202c; }
+        .modal-card label { display: block; font-size: 0.8rem; font-weight: 600; margin: 10px 0 4px 0; color: #4a5568; }
+        .modal-card input { text-align: left; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>🗺️ Ласкаво просимо до Intermap</h1>
-        <p class="subtitle">Платформа для створення та проходження геометричних і контурних тестів</p>
+        <h1 id="mainTitle">🗺️ Ласкаво просимо до Intermap</h1>
+        <p class="subtitle" id="mainNotice">Платформа для створення та проходження геометричних і контурних тестів</p>
 
         <div class="cards-grid">
             <!-- Картка Вчителя -->
@@ -225,7 +189,7 @@
                     <h2>Для Вчителя</h2>
                     <p>Завантажуйте карти, створюйте завдання із точками чи контурними областями («пончиками») та отримуйте результати учнів.</p>
                 </div>
-                <a href="teacher.html" class="btn btn-teacher">Панель Вчителя</a>
+                <a href="teacher.html" id="teacherLink" class="btn btn-teacher">Панель Вчителя</a>
             </div>
 
             <!-- Картка Учня -->
@@ -251,7 +215,7 @@
         </div>
     </div>
 
-    <!-- Модальне вікно потрійної перевірки адміна -->
+    <!-- Модальне вікно перевірки адміна -->
     <div id="adminAuthModal" class="modal">
         <div class="modal-card">
             <h3>🔑 Вхід в Адмінку</h3>
@@ -266,37 +230,93 @@
             <label>3. Google Secret Key:</label>
             <input type="password" id="admGoogle" placeholder="Google Auth Key">
 
-            <button onclick="verifyTripleAuth()" class="btn btn-admin" style="width:100%; margin-top:1rem;">Увійти</button>
+            <button id="submitAuthBtn" class="btn btn-admin" style="width:100%; margin-top:1rem;">Увійти</button>
             <button onclick="document.getElementById('adminAuthModal').style.display='none'" class="btn" style="width:100%; background:#e2e8f0; color:#4a5568; margin-top:0.5rem;">Скасувати</button>
         </div>
     </div>
 
     <!-- Firebase SDK v10 MODULE -->
     <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-      import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-      const firebaseConfig = {
-        databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app/"
-      };
+        const firebaseConfig = {
+            apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
+            authDomain: "intermap-app.firebaseapp.com",
+            databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "intermap-app",
+            storageBucket: "intermap-app.firebasestorage.app",
+            messagingSenderId: "869707502446",
+            appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f",
+            measurementId: "G-QB0SF133NB"
+        };
 
-      const app = initializeApp(firebaseConfig);
-      const db = getDatabase(app);
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
 
-      window.fbDB = db;
-      window.fbRef = ref;
-      window.fbGet = get;
-      window.fbChild = child;
+        // Перевірка обмежень доступу сайту
+        async function checkSiteAccess() {
+            try {
+                const snap = await get(ref(db, 'settings'));
+                if (snap.exists()) {
+                    const settings = snap.val();
+
+                    if (settings.maintenance) {
+                        document.body.innerHTML = `
+                            <div style="text-align:center; padding: 30px; font-family: sans-serif;">
+                                <h1>🚨 Технічне обслуговування</h1>
+                                <p style="color:#64748b; margin-top:10px;">Сайт тимчасово закритий адміністратором.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    if (settings.title) document.getElementById('mainTitle').innerText = settings.title;
+                    if (settings.notice) document.getElementById('mainNotice').innerText = settings.notice;
+
+                    window.blockStudents = settings.blockStudents || false;
+                    window.blockTeacher = settings.blockTeacher || false;
+                }
+            } catch (e) {
+                console.error("Помилка підключення до налаштувань:", e);
+            }
+        }
+
+        // Авторизація адміна через пароль з БД
+        async function verifyTripleAuth() {
+            const pass = document.getElementById('admPass').value.trim();
+            const tg = document.getElementById('admTg').value.trim();
+            const google = document.getElementById('admGoogle').value.trim();
+
+            try {
+                const authSnap = await get(ref(db, 'auth'));
+                const correctAdminPass = authSnap.exists() ? authSnap.val().adminPassword : 'admin16';
+
+                if (pass === correctAdminPass && tg === '@IvanIntermap' && google === 'G-161013') {
+                    window.location.href = 'admin.html';
+                } else {
+                    alert('❌ Помилка автентифікації! Невірні дані.');
+                }
+            } catch (err) {
+                alert("Помилка зв'язку з БД: " + err.message);
+            }
+        }
+
+        document.getElementById('submitAuthBtn').addEventListener('click', verifyTripleAuth);
+        checkSiteAccess();
     </script>
 
     <script>
-        // Відкриття та закриття модального вікна
         document.getElementById('openAdminModalBtn').addEventListener('click', () => {
             document.getElementById('adminAuthModal').style.display = 'flex';
         });
 
-        // Запуск тесту за кодом
         document.getElementById('startTestBtn').addEventListener('click', () => {
+            if (window.blockStudents) {
+                alert('🔒 Проходження тестів тимчасово заблоковано адміністратором.');
+                return;
+            }
+
             const code = document.getElementById('quickCodeInput').value.trim();
             if (code) {
                 window.location.href = `student.html?code=${encodeURIComponent(code)}`;
@@ -305,18 +325,12 @@
             }
         });
 
-        // Перевірка потрійної автентифікації
-        function verifyTripleAuth() {
-            const pass = document.getElementById('admPass').value;
-            const tg = document.getElementById('admTg').value.trim();
-            const google = document.getElementById('admGoogle').value.trim();
-
-            if (pass === 'admin16' && tg === '@IvanIntermap' && google === 'G-161013') {
-                window.location.href = 'admin.html';
-            } else {
-                alert('❌ Помилка потрійної автентифікації! Доступ відхилено.');
+        document.getElementById('teacherLink').addEventListener('click', (e) => {
+            if (window.blockTeacher) {
+                e.preventDefault();
+                alert('🔒 Доступ до панелі вчителя тимчасово заблоковано адміністратором.');
             }
-        }
+        });
     </script>
 </body>
 </html>
