@@ -38,22 +38,14 @@
             margin-bottom: 20px;
         }
 
-        .form-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 15px;
-            max-width: 500px;
-            margin-bottom: 20px;
-        }
-
-        @media (max-width: 500px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
         .form-group {
             margin-bottom: 15px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
         }
 
         label {
@@ -199,7 +191,7 @@
         <!-- КРОК 1: Введення коду (якщо не передано в URL) -->
         <section id="codeLoaderSection" class="header-bar">
             <h1>Проходження Тесту</h1>
-            <p style="margin-bottom: 15px; font-size: 0.9rem; color: #718096;">Введіть код тесту, отриманий від вчителя:</p>
+            <p style="margin-bottom: 15px; font-size: 0.9rem; color: #718096;">Введіть 10-значний код тесту, отриманий від вчителя:</p>
             <div style="display: flex; gap: 10px; max-width: 400px;">
                 <input type="text" id="studentCodeInput" placeholder="Код тесту (наприклад: A1b2C3d4E5)">
                 <button id="loadTestBtn" class="btn primary-btn">Завантажити</button>
@@ -214,18 +206,18 @@
             </div>
 
             <!-- Введення даних учня -->
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="studentName">Ім'я та Прізвище учня:</label>
+            <section class="form-group grid-2" style="margin-bottom: 20px;">
+                <div>
+                    <label for="studentName">Ваше Ім'я та Прізвище:</label>
                     <input type="text" id="studentName" placeholder="Іван Іваненко" required>
                 </div>
-                <div class="form-group">
+                <div>
                     <label for="studentClass">Клас:</label>
-                    <input type="text" id="studentClass" placeholder="9-А" required>
+                    <input type="text" id="studentClass" placeholder="Наприклад: 8-А">
                 </div>
-            </div>
+            </section>
 
-            <!-- Полотно Карти та інструкція -->
+            <!-- Полотно Карти -->
             <div id="studentInstruction" class="instruction-box">
                 👈 Оберіть завдання зі списку нижче, щоб розпочати виконання.
             </div>
@@ -255,7 +247,7 @@
         </div>
     </div>
 
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (ES МОДУЛЬ) -->
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (ES6 Module) -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
