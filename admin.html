@@ -12,10 +12,11 @@
         <aside class="sidebar">
             <div class="logo">⚙️ Intermap Admin</div>
             <nav class="nav-menu">
-                <button class="nav-btn active" onclick="switchTab('tests')">🗺️ Контроль Тестів & Історія</button>
-                <button class="nav-btn" onclick="switchTab('security')">🔑 Безпека & Паролі</button>
-                <button class="nav-btn" onclick="switchTab('settings')">⚙️ Налаштування Сайту</button>
-                <button class="nav-btn" onclick="switchTab('stats')">📊 Статистика</button>
+                <button class="nav-btn active" onclick="switchTab('tests', event)">🗺️ Контроль Тестів & Історія</button>
+                <button class="nav-btn" onclick="switchTab('journal', event)">📖 Журнал Оцінок Учнів</button>
+                <button class="nav-btn" onclick="switchTab('security', event)">🔑 Безпека & Паролі</button>
+                <button class="nav-btn" onclick="switchTab('settings', event)">⚙️ Налаштування Сайту</button>
+                <button class="nav-btn" onclick="switchTab('stats', event)">📊 Статистика & Логи</button>
             </nav>
             <a href="index.html" class="exit-btn">🚪 Вийти на головну</a>
         </aside>
@@ -27,7 +28,7 @@
             <section id="tab-tests" class="tab-content active">
                 <h1>🗺️ Контроль та Історія Створених Тестів</h1>
                 <p style="color: #64748b; margin-bottom: 1.5rem; font-size: 0.9rem;">
-                    Усі зміни балів та штрафів зберігаються в реальному часі та одразу діють для учнів.
+                    Усі зміни балів, клонування та видалення зберігаються в реальному часі та одразу діють для учнів.
                 </p>
                 <div id="testsHistoryList">
                     <div class="card">
@@ -36,7 +37,21 @@
                 </div>
             </section>
 
-            <!-- Вкладка 2: Безпека та Зміна паролів -->
+            <!-- Вкладка 2: Журнал Оцінок Учнів -->
+            <section id="tab-journal" class="tab-content">
+                <h1>📖 Журнал Результатів Учнів</h1>
+                <p style="color: #64748b; margin-bottom: 1rem; font-size: 0.9rem;">
+                    Перегляд усіх проходжень тестів у реальному часі та пошук за ім'ям чи кодом.
+                </p>
+                <div class="card">
+                    <input type="text" id="journalSearchInput" placeholder="🔍 Пошук за ім'ям, класом або кодом..." style="width: 100%; margin-bottom: 15px;">
+                    <div id="studentJournalContainer">
+                        <p class="loading" style="text-align:center;">Завантаження журналу...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Вкладка 3: Безпека та Зміна паролів -->
             <section id="tab-security" class="tab-content">
                 <h1>🔑 Зміна Паролів Доступу</h1>
                 <div class="card">
@@ -57,7 +72,7 @@
                 </div>
             </section>
 
-            <!-- Вкладка 3: Налаштування сайту та обмеження доступу -->
+            <!-- Вкладка 4: Налаштування сайту (Бан / Розбан / Maintenance) -->
             <section id="tab-settings" class="tab-content">
                 <h1>⚙️ Глобальні Налаштування Сайту</h1>
                 
@@ -67,7 +82,7 @@
                     <div class="setting-item">
                         <div>
                             <strong>Режим технічного обслуговування (Maintenance Mode)</strong>
-                            <p class="sub-text">Повністю блокує доступ до всього сайту для учнів та вчителів.</p>
+                            <p class="sub-text">Повністю блокує доступ до всього сайту для всіх користувачів.</p>
                         </div>
                         <label class="switch">
                             <input type="checkbox" id="maintenanceToggle">
@@ -77,7 +92,7 @@
 
                     <div class="setting-item">
                         <div>
-                            <strong>Заблокувати проходження тестів для учнів</strong>
+                            <strong>Заблокувати проходження тестів для учнів (Бан)</strong>
                             <p class="sub-text">Учні не зможуть відкривати та виконувати тести.</p>
                         </div>
                         <label class="switch">
@@ -88,7 +103,7 @@
 
                     <div class="setting-item">
                         <div>
-                            <strong>Заблокувати створення нових тестів</strong>
+                            <strong>Заблокувати створення нових тестів вчителями (Бан)</strong>
                             <p class="sub-text">Вчителі не зможуть публікувати нові тести.</p>
                         </div>
                         <label class="switch">
@@ -114,10 +129,10 @@
                 </div>
             </section>
 
-            <!-- Вкладка 4: Статистика -->
+            <!-- Вкладка 5: Статистика & Відстеження дій (Логи) -->
             <section id="tab-stats" class="tab-content">
-                <h1>📊 Аналітика системи</h1>
-                <div class="stats-grid">
+                <h1>📊 Аналітика та Системні Логи</h1>
+                <div class="stats-grid" style="margin-bottom: 20px;">
                     <div class="stat-card">
                         <div class="stat-number" id="statTotalTests">0</div>
                         <div class="stat-label">Всього тестів</div>
@@ -125,6 +140,17 @@
                     <div class="stat-card">
                         <div class="stat-number" id="statTotalTasks">0</div>
                         <div class="stat-label">Створено завдань</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="statTotalResults">0</div>
+                        <div class="stat-label">Виконано робіт</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>📜 Журнал дій системи (Audit Log)</h2>
+                    <div id="auditLogsContainer" style="max-height: 250px; overflow-y: auto;">
+                        <p class="loading">Завантаження логів...</p>
                     </div>
                 </div>
             </section>
