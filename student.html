@@ -38,6 +38,20 @@
             margin-bottom: 20px;
         }
 
+        .form-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 15px;
+            max-width: 500px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 500px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .form-group {
             margin-bottom: 15px;
         }
@@ -185,7 +199,7 @@
         <!-- КРОК 1: Введення коду (якщо не передано в URL) -->
         <section id="codeLoaderSection" class="header-bar">
             <h1>Проходження Тесту</h1>
-            <p style="margin-bottom: 15px; font-size: 0.9rem; color: #718096;">Введіть 10-значний код тесту, отриманий від вчителя:</p>
+            <p style="margin-bottom: 15px; font-size: 0.9rem; color: #718096;">Введіть код тесту, отриманий від вчителя:</p>
             <div style="display: flex; gap: 10px; max-width: 400px;">
                 <input type="text" id="studentCodeInput" placeholder="Код тесту (наприклад: A1b2C3d4E5)">
                 <button id="loadTestBtn" class="btn primary-btn">Завантажити</button>
@@ -199,13 +213,19 @@
                 <p style="color: #718096; font-size: 0.9rem;">Оберіть завдання зі списку, прочитайте інструкцію та виконайте його на карті.</p>
             </div>
 
-            <!-- Введення імені учня -->
-            <section class="form-group" style="max-width: 400px; margin-bottom: 20px;">
-                <label for="studentName">Ваше Ім'я та Прізвище:</label>
-                <input type="text" id="studentName" placeholder="Іван Іваненко" required>
-            </section>
+            <!-- Введення даних учня -->
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="studentName">Ім'я та Прізвище учня:</label>
+                    <input type="text" id="studentName" placeholder="Іван Іваненко" required>
+                </div>
+                <div class="form-group">
+                    <label for="studentClass">Клас:</label>
+                    <input type="text" id="studentClass" placeholder="9-А" required>
+                </div>
+            </div>
 
-            <!-- Полотно Карти -->
+            <!-- Полотно Карти та інструкція -->
             <div id="studentInstruction" class="instruction-box">
                 👈 Оберіть завдання зі списку нижче, щоб розпочати виконання.
             </div>
@@ -235,27 +255,7 @@
         </div>
     </div>
 
-    <!-- FIREBASE SDK v10 MODULE -->
-    <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-      import { getDatabase, ref, set, get, child, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-
-      const firebaseConfig = {
-        databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app/"
-      };
-
-      const app = initializeApp(firebaseConfig);
-      const db = getDatabase(app);
-
-      window.fbDB = db;
-      window.fbRef = ref;
-      window.fbSet = set;
-      window.fbGet = get;
-      window.fbChild = child;
-      window.fbPush = push;
-    </script>
-
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ -->
-    <script src="script.js"></script>
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (ES МОДУЛЬ) -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
