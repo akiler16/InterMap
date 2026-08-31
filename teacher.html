@@ -54,7 +54,7 @@
             font-size: 0.9rem;
         }
 
-        input[type="text"], input[type="number"], select, textarea {
+        input[type="text"], input[type="number"], input[type="password"], select, textarea {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #cbd5e0;
@@ -118,7 +118,6 @@
             background-color: #4a5568;
         }
 
-        /* Панель інструментів карти */
         .toolbar {
             display: flex;
             gap: 10px;
@@ -129,7 +128,6 @@
             border-radius: 8px;
         }
 
-        /* Полотно Карти */
         .map-container {
             position: relative;
             display: inline-block;
@@ -158,18 +156,6 @@
             cursor: crosshair;
         }
 
-        /* Список створених завдань */
-        .task-item {
-            background: #f7fafc;
-            border: 1px solid #e2e8f0;
-            padding: 12px 15px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
         .code-display {
             background: #ebf8ff;
             border: 2px dashed #3182ce;
@@ -186,11 +172,45 @@
             color: #2b6cb0;
             letter-spacing: 2px;
         }
+
+        /* Модальне вікно входу для вчителя */
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .auth-card {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body>
 
-    <div class="container">
+    <!-- Модальне вікно авторизації вчителя -->
+    <div id="teacherAuthOverlay" class="auth-overlay">
+        <div class="auth-card">
+            <h2>🔑 Вхід для Вчителя</h2>
+            <p style="font-size: 0.85rem; color: #718096; margin-bottom: 15px;">Введіть пароль доступу до панелі конструктора:</p>
+            <div class="form-group">
+                <input type="password" id="teacherPasswordInput" placeholder="Пароль доступу">
+            </div>
+            <button id="teacherLoginBtn" class="btn primary-btn" style="width: 100%;">Увійти</button>
+            <a href="index.html" class="btn secondary-btn" style="width: 100%; text-align: center; margin-top: 10px; text-decoration: none;">На головну</a>
+        </div>
+    </div>
+
+    <!-- Основна панель вчителя -->
+    <div class="container" id="mainTeacherPanel" style="display: none;">
         <div class="header-bar">
             <h1>Конструктор Карт та Тестів</h1>
             <a href="admin.html" class="btn secondary-btn">📊 Журнал оцінок</a>
@@ -202,11 +222,23 @@
             <input type="text" id="testTitle" placeholder="Наприклад: Фізична карта України. Гори та рівнини">
         </section>
 
-        <section class="form-group">
-            <label for="mapUrl">Посилання на зображення карти (URL):</label>
-            <div style="display: flex; gap: 10px;">
-                <input type="text" id="mapUrl" placeholder="https://example.com/map.jpg">
-                <button id="loadMapBtn" class="btn primary-btn">Завантажити</button>
+        <!-- Варіанти завантаження карти -->
+        <section class="form-group" style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <label style="font-size: 1rem; margin-bottom: 10px;">Джерело карти:</label>
+            
+            <div style="margin-bottom: 12px;">
+                <label for="mapFileInput" style="font-weight: normal; font-size: 0.85rem;">📁 Завантажити з комп'ютера (файл зображення):</label>
+                <input type="file" id="mapFileInput" accept="image/*" style="background: white;">
+            </div>
+
+            <div style="text-align: center; font-size: 0.8rem; color: #a0aec0; margin: 8px 0;">— АБО —</div>
+
+            <div>
+                <label for="mapUrl" style="font-weight: normal; font-size: 0.85rem;">🔗 Вказати посилання (URL):</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="mapUrl" placeholder="https://example.com/map.jpg">
+                    <button id="loadMapBtn" class="btn primary-btn">Завантажити</button>
+                </div>
             </div>
         </section>
 
@@ -261,7 +293,7 @@
                 <button id="saveTestBtn" class="btn primary-btn" style="font-size: 1.1rem; padding: 12px 24px;">💾 Зберегти та згенерувати код</button>
             </div>
 
-            <!-- Блок згенерованого коду -->
+            <!-- Блок Згенерованого Коду -->
             <div id="generatedCodeSection" class="code-display" style="display: none;">
                 <p>Тест успішно збережено! Передайте цей код учням:</p>
                 <span id="testCodeDisplay">XXXXXXXXXX</span>
@@ -269,7 +301,61 @@
         </div>
     </div>
 
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (ES МОДУЛЬ) -->
+    <!-- Обробка вибору файлу з ПК -->
+    <script>
+        document.getElementById('mapFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const img = document.getElementById('teacherMapImage');
+                    img.src = evt.target.result;
+                    document.getElementById('editorArea').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    </script>
+
+    <!-- FIREBASE SDK v10 MODULE & ПЕРЕВІРКА ПАРОЛЯ -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
+            authDomain: "intermap-app.firebaseapp.com",
+            databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "intermap-app",
+            storageBucket: "intermap-app.firebasestorage.app",
+            messagingSenderId: "869707502446",
+            appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        async function verifyTeacherPassword() {
+            const inputPass = document.getElementById('teacherPasswordInput').value.trim();
+            try {
+                const authSnap = await get(ref(db, 'auth'));
+                const correctPass = authSnap.exists() && authSnap.val().teacherPassword ? authSnap.val().teacherPassword : 'teacher123';
+
+                if (inputPass === correctPass) {
+                    document.getElementById('teacherAuthOverlay').style.display = 'none';
+                    document.getElementById('mainTeacherPanel').style.display = 'block';
+                } else {
+                    alert('❌ Невірний пароль вчителя!');
+                }
+            } catch (err) {
+                alert("Помилка підключення до БД: " + err.message);
+            }
+        }
+
+        document.getElementById('teacherLoginBtn').addEventListener('click', verifyTeacherPassword);
+    </script>
+
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
