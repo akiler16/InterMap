@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, set, remove, push, child, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, get, set, remove, push, child } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ==========================================
 // 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН
@@ -22,10 +22,7 @@ const db = getDatabase(app);
 // Telegram Bot Configuration
 const BOT_TOKEN = "8847524737:AAEUqbQzjtstH7uzvHSx0Dpx4B9G_HbFM2g";
 
-// Стан пароля та тесту вчителя
-const DEFAULT_PASSWORD = 'admin';
-let teacherPassword = localStorage.getItem('teacherPassword') || DEFAULT_PASSWORD;
-
+// Стан тесту вчителя
 let currentTest = {
     id: null,
     title: '',
@@ -60,98 +57,16 @@ window.selectTaskForStudent = selectTaskForStudent;
 window.fetchMyChatId = fetchMyChatId;
 
 // ==========================================
-// 2. УТИЛІТИ ТА ІНІЦІАЛІЗАЦІЯ
+// 2. ІНІЦІАЛІЗАЦІЯ
 // ==========================================
 
-function getDeviceId() {
-    let deviceId = localStorage.getItem('intermap_hwid');
-    if (!deviceId) {
-        const rawId = `${navigator.userAgent}-${screen.width}x${screen.height}-${Math.random().toString(36).substring(2)}`;
-        deviceId = 'DEV-' + btoa(rawId).replace(/=/g, '').substring(0, 24);
-        localStorage.setItem('intermap_hwid', deviceId);
-    }
-    return deviceId;
-}
-
 document.addEventListener('DOMContentLoaded', () => {
-    initTeacherAuth();
-    if (typeof initTeacherPanel === 'function') initTeacherPanel();
-    if (typeof initStudentPanel === 'function') initStudentPanel();
+    initTeacherPanel();
+    initStudentPanel();
 });
 
 // ==========================================
-// 3. АВТОРИЗАЦІЯ ВЧИТЕЛЯ (ЛІЦЕНЗІЯ + HWID)
-// ==========================================
-
-function initTeacherAuth() {
-    const authModal = document.getElementById('authModal');
-    const teacherContent = document.getElementById('teacherContent');
-    const loginForm = document.getElementById('teacherLoginForm');
-
-    if (sessionStorage.getItem('intermap_teacher_authed') === 'true') {
-        if (authModal) authModal.style.display = 'none';
-        if (teacherContent) teacherContent.style.display = 'block';
-        return;
-    }
-
-    if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const key = document.getElementById('teacherLicenseInput').value.trim().toUpperCase();
-            const pass = document.getElementById('teacherPasswordInput').value.trim();
-            const deviceId = getDeviceId();
-            const today = new Date().toISOString().split('T')[0];
-
-            try {
-                const licenseRef = ref(db, `licenses/${key}`);
-                const snapshot = await get(licenseRef);
-
-                if (!snapshot.exists()) {
-                    alert("❌ Ключ не знайдено! Перевірте правильність вводу.");
-                    return;
-                }
-
-                const lic = snapshot.val();
-
-                if (lic.password !== pass) {
-                    alert("❌ Невірний пароль!");
-                    return;
-                }
-
-                if (!lic.active) {
-                    alert("🚫 Цей ключ заблоковано адміністратором.");
-                    return;
-                }
-
-                if (today < lic.validFrom || today > lic.validTo) {
-                    alert(`⏳ Термін дії ключа закінчився (${lic.validTo})`);
-                    return;
-                }
-
-                if (!lic.boundDeviceId) {
-                    await update(licenseRef, { boundDeviceId: deviceId });
-                } else if (lic.boundDeviceId !== deviceId) {
-                    alert("📱 Цей ключ вже активовано на іншому пристрої!");
-                    return;
-                }
-
-                sessionStorage.setItem('intermap_teacher_authed', 'true');
-                if (authModal) authModal.style.display = 'none';
-                if (teacherContent) teacherContent.style.display = 'block';
-                
-                alert(`Ласкаво просимо, ${lic.owner || 'Вчитель'}!`);
-
-            } catch (err) {
-                console.error("Помилка автентифікації:", err);
-                alert("Помилка з'єднання з базою даних.");
-            }
-        });
-    }
-}
-
-// ==========================================
-// 4. ПАНЕЛЬ ВЧИТЕЛЯ ТА TELEGRAM API
+// 3. ПАНЕЛЬ ВЧИТЕЛЯ ТА TELEGRAM API
 // ==========================================
 
 async function fetchMyChatId() {
@@ -208,8 +123,8 @@ function initTeacherPanel() {
             reader.onload = (evt) => {
                 mapImagePreview.src = evt.target.result;
                 currentTest.imageSrc = evt.target.result;
-                mapWrapper.style.display = 'block';
-                taskSection.style.display = 'block';
+                if (mapWrapper) mapWrapper.style.display = 'block';
+                if (taskSection) taskSection.style.display = 'block';
                 
                 mapImagePreview.onload = () => {
                     setupTeacherCanvas();
@@ -324,8 +239,8 @@ function initTeacherPanel() {
             const shareContainer = document.getElementById('shareLinkContainer');
             const studentUrl = `${window.location.origin}${window.location.pathname.replace('teacher.html', 'student.html')}?code=${code}`;
             
-            linkInput.value = studentUrl;
-            shareContainer.style.display = 'block';
+            if (linkInput) linkInput.value = studentUrl;
+            if (shareContainer) shareContainer.style.display = 'block';
 
             renderHistoryList();
         });
@@ -334,9 +249,11 @@ function initTeacherPanel() {
     if (copyLinkBtn) {
         copyLinkBtn.addEventListener('click', () => {
             const linkInput = document.getElementById('studentLinkInput');
-            linkInput.select();
-            document.execCommand('copy');
-            alert('Посилання скопійовано!');
+            if (linkInput) {
+                linkInput.select();
+                document.execCommand('copy');
+                alert('Посилання скопійовано!');
+            }
         });
     }
 
@@ -568,7 +485,7 @@ async function deleteTest(code) {
 }
 
 // ==========================================
-// 5. ПАНЕЛЬ УЧНЯ
+// 4. ПАНЕЛЬ УЧНЯ
 // ==========================================
 
 function initStudentPanel() {
@@ -801,7 +718,7 @@ function selectTaskForStudent(index) {
 }
 
 // ==========================================
-// 6. ПЕРЕВІРКА ВІДПОВІДЕЙ ТА СПОВІЩЕННЯ
+// 5. ПЕРЕВІРКА ВІДПОВІДЕЙ ТА СПОВІЩЕННЯ
 // ==========================================
 
 async function checkStudentWork() {
@@ -951,7 +868,7 @@ function isPointInPolygon(point, polygon) {
 }
 
 // ==========================================
-// 7. РОБОТА З FIREBASE REALTIME DATABASE
+// 6. РОБОТА З FIREBASE REALTIME DATABASE
 // ==========================================
 
 async function saveTestToFirebase(testCode, testData) {
