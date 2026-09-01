@@ -42,7 +42,49 @@
         p.subtitle {
             color: #718096;
             font-size: 1.05rem;
-            margin-bottom: 35px;
+            margin-bottom: 25px;
+        }
+
+        /* Блок автентифікації */
+        .auth-card {
+            background: #edf2f7;
+            border: 1px solid #cbd5e0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+
+        .auth-card h3 {
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+            color: #2d3748;
+            text-align: center;
+        }
+
+        .auth-inputs {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .auth-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #e6fffa;
+            border: 1px solid #b2f5ea;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
         }
 
         .cards-grid {
@@ -109,6 +151,8 @@
         .btn-teacher:hover { background-color: #2b6cb0; }
         .btn-student { background-color: #38a169; color: white; }
         .btn-student:hover { background-color: #2f855a; }
+        .btn-google { background-color: #ea4335; color: white; margin-top: 8px; }
+        .btn-google:hover { background-color: #d93025; }
 
         .btn-admin {
             background-color: #0f172a;
@@ -126,7 +170,7 @@
             gap: 10px;
         }
 
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], input[type="email"] {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #cbd5e0;
@@ -137,7 +181,7 @@
             transition: border-color 0.2s;
         }
 
-        input[type="text"]:focus, input[type="password"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus {
             border-color: #3182ce;
         }
 
@@ -181,6 +225,30 @@
         <h1 id="mainTitle">🗺️ Ласкаво просимо до Intermap</h1>
         <p class="subtitle" id="mainNotice">Платформа для створення та проходження геометричних і контурних тестів</p>
 
+        <!-- БЛОК АВТЕНТИФІКАЦІЇ -->
+        <div id="authFormBox" class="auth-card">
+            <h3>🔐 Вхід / Реєстрація</h3>
+            <div class="auth-inputs">
+                <input type="email" id="emailInput" placeholder="Ваш Email">
+                <input type="password" id="passwordInput" placeholder="Пароль">
+                
+                <div class="auth-buttons">
+                    <button onclick="handleEmailLogin()" class="btn btn-teacher" style="padding:8px;">Увійти</button>
+                    <button onclick="handleEmailRegister()" class="btn btn-student" style="padding:8px;">Зареєструватися</button>
+                </div>
+                <button onclick="handleGoogleLogin()" class="btn btn-google" style="padding:8px;">Увійти через Google</button>
+            </div>
+        </div>
+
+        <!-- ІНФОРМАЦІЯ ПРО АКТИВНОГО КОРИСТУВАЧА -->
+        <div id="userInfoBox" class="user-info" style="display: none;">
+            <div>
+                👤 <b><span id="userEmailSpan">user@example.com</span></b> 
+                (<span id="userRoleSpan" style="color:#2b6cb0; font-weight:bold;">student</span>)
+            </div>
+            <button onclick="handleLogout()" class="btn" style="width:auto; padding: 6px 14px; background:#e53e3e; color:white; font-size:0.85rem;">Вийти</button>
+        </div>
+
         <div class="cards-grid">
             <!-- Картка Вчителя -->
             <div class="card card-teacher">
@@ -206,12 +274,19 @@
             </div>
         </div>
 
-        <div>
-            <button id="openAdminModalBtn" class="btn btn-admin">🔐 Адмін-панель</button>
+        <!-- Управління користувачами для головного Admin/Owner -->
+        <div id="adminPanelSection" style="display:none; margin-top: 20px; text-align: left; background: #fff; border: 2px dashed #4a5568; padding: 20px; border-radius: 12px;">
+            <h3>⚙️ Панель Управління Користувачами (Admin)</h3>
+            <p style="font-size: 0.85rem; color: #718096; margin-bottom: 10px;">Зміна ролей користувачів у Firebase Database:</p>
+            <div id="adminUsersList">Завантаження списку...</div>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <button id="openAdminModalBtn" class="btn btn-admin">🔐 Вхід в Адмінку (Код)</button>
         </div>
 
         <div class="footer-info">
-            Синхронізовано з хмарою Firebase Realtime Database
+            Синхронізовано з хмарою Firebase Realtime Database & Firebase Auth
         </div>
     </div>
 
@@ -282,7 +357,7 @@
             }
         }
 
-        // Авторизація адміна через пароль з БД
+        // Авторизація адміна через потрійний ключ
         async function verifyTripleAuth() {
             const pass = document.getElementById('admPass').value.trim();
             const tg = document.getElementById('admTg').value.trim();
@@ -306,7 +381,7 @@
         checkSiteAccess();
     </script>
 
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ -->
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ АВТОРИЗАЦІЇ ТА КАРТ -->
     <script type="module" src="script.js"></script>
 
     <script>
