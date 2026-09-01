@@ -1,8 +1,21 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, get, set, remove, push, child, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { 
+    getDatabase, ref, get, set, remove, push, child, update, onValue 
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { 
+    getAuth, 
+    createUserWithEmailAndPassword, 
+    signInWithEmailAndPassword, 
+    signOut, 
+    onAuthStateChanged,
+    GoogleAuthProvider,
+    signInWithPopup,
+    setPersistence,
+    browserLocalPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // ==========================================
-// 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН
+// 1. КОНФІГУРАЦІЯ ТА ІНІЦІАЛІЗАЦІЯ FIREBASE
 // ==========================================
 
 const firebaseConfig = {
@@ -15,12 +28,27 @@ const firebaseConfig = {
     appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f"
 };
 
+// ⚠️ ЕМЕЙЛИ ВЛАСНИКА ⚠️
+const OWNER_EMAILS = [
+    "vanyary16@gmai.com",
+    "vanyarybalka13@gmail.com"
+];
+
 // Ініціалізація Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+
+// Сесія залишається активною поки не натиснути "Вийти"
+setPersistence(auth, browserLocalPersistence);
 
 // Telegram Bot Token
 const BOT_TOKEN = "8847524737:AAEUqbQzjtstH7uzvHSx0Dpx4B9G_HbFM2g";
+
+// Глобальний стан авторизації
+let currentUser = null;
+let currentUserRole = 'guest';
 
 // Глобальний стан конструктора Вчителя
 let currentTest = {
@@ -38,7 +66,7 @@ let multiMarkers = [];
 let currentPolyline = [];
 let donutOuterPolygon = [];
 let donutInnerPolygon = [];
-let currentDrawingMode = 'outer'; // 'outer' або 'inner'
+let currentDrawingMode = 'outer';
 let isTeacherDrawing = false;
 let useRedZone = false;
 
@@ -51,7 +79,12 @@ let isStudentDrawing = false;
 let currentStudentPolygon = [];
 let currentStudentLine = [];
 
-// Експорт функцій у глобальну область для HTML inline обробників
+// Експорт функцій у глобальну область window (для HTML onclick)
+window.handleEmailRegister = handleEmailRegister;
+window.handleEmailLogin = handleEmailLogin;
+window.handleGoogleLogin = handleGoogleLogin;
+window.handleLogout = handleLogout;
+window.setUserRole = setUserRole;
 window.removeTeacherTask = removeTeacherTask;
 window.copyCodeLink = copyCodeLink;
 window.deleteTest = deleteTest;
@@ -60,7 +93,194 @@ window.fetchMyChatId = fetchMyChatId;
 window.clearCurrentShape = clearCurrentShape;
 
 // ==========================================
-// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ
+// 2. ВІДСТЕЖЕННЯ СТАНУ АВТОРИЗАЦІЇ ТА РОУТИНГ
+// ==========================================
+
+function isOwnerEmail(email) {
+    if (!email) return false;
+    return OWNER_EMAILS.some(ownerEmail => ownerEmail.toLowerCase() === email.toLowerCase());
+}
+
+onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    const path = window.location.pathname;
+
+    if (user) {
+        const userRef = ref(db, `users/${user.uid}`);
+        const snapshot = await get(userRef);
+        const isOwner = isOwnerEmail(user.email);
+
+        if (!snapshot.exists()) {
+            currentUserRole = isOwner ? 'admin' : 'student';
+            await set(userRef, {
+                email: user.email,
+                role: currentUserRole,
+                createdAt: new Date().toLocaleString('uk-UA')
+            });
+        } else {
+            currentUserRole = snapshot.val().role || 'student';
+            if (isOwner && currentUserRole !== 'admin') {
+                currentUserRole = 'admin';
+                await update(userRef, { role: 'admin' });
+            }
+        }
+
+        updateUIForUser(user);
+
+        // Захист сторінки Вчителя
+        if (path.includes('teacher.html') && currentUserRole !== 'teacher' && currentUserRole !== 'admin') {
+            alert("❌ У вас немає прав доступу до панелі вчителя!");
+            window.location.href = 'index.html';
+        }
+
+    } else {
+        currentUserRole = 'guest';
+        if (path.includes('teacher.html')) {
+            window.location.href = 'index.html';
+        }
+        updateUIForGuest();
+    }
+});
+
+function updateUIForUser(user) {
+    const userInfoBox = document.getElementById('userInfoBox');
+    const authFormBox = document.getElementById('authFormBox');
+    const userEmailSpan = document.getElementById('userEmailSpan');
+    const userRoleSpan = document.getElementById('userRoleSpan');
+    const teacherNavBtn = document.getElementById('teacherNavBtn');
+    const adminPanelSection = document.getElementById('adminPanelSection');
+
+    if (authFormBox) authFormBox.style.display = 'none';
+    if (userInfoBox) userInfoBox.style.display = 'block';
+    if (userEmailSpan) userEmailSpan.innerText = user.email;
+    if (userRoleSpan) userRoleSpan.innerText = currentUserRole;
+
+    if (teacherNavBtn) {
+        teacherNavBtn.style.display = (currentUserRole === 'teacher' || currentUserRole === 'admin') ? 'inline-block' : 'none';
+    }
+
+    if (adminPanelSection) {
+        if (currentUserRole === 'admin' || isOwnerEmail(user.email)) {
+            adminPanelSection.style.display = 'block';
+            loadAdminUserManagement();
+        } else {
+            adminPanelSection.style.display = 'none';
+        }
+    }
+}
+
+function updateUIForGuest() {
+    const userInfoBox = document.getElementById('userInfoBox');
+    const authFormBox = document.getElementById('authFormBox');
+    const adminPanelSection = document.getElementById('adminPanelSection');
+    const teacherNavBtn = document.getElementById('teacherNavBtn');
+
+    if (authFormBox) authFormBox.style.display = 'block';
+    if (userInfoBox) userInfoBox.style.display = 'none';
+    if (adminPanelSection) adminPanelSection.style.display = 'none';
+    if (teacherNavBtn) teacherNavBtn.style.display = 'none';
+}
+
+// ==========================================
+// 3. МЕТОДИ ВХОДУ ТА АДМІНІСТРУВАННЯ
+// ==========================================
+
+async function handleEmailRegister() {
+    const email = document.getElementById('emailInput')?.value.trim();
+    const password = document.getElementById('passwordInput')?.value.trim();
+    if (!email || !password) return alert("Введіть Email та Пароль!");
+
+    try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        alert("✅ Акаунт успішно створено!");
+    } catch (e) {
+        alert("❌ Помилка реєстрації: " + e.message);
+    }
+}
+
+async function handleEmailLogin() {
+    const email = document.getElementById('emailInput')?.value.trim();
+    const password = document.getElementById('passwordInput')?.value.trim();
+    if (!email || !password) return alert("Введіть Email та Пароль!");
+
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+        alert("❌ Помилка входу: " + e.message);
+    }
+}
+
+async function handleGoogleLogin() {
+    try {
+        await signInWithPopup(auth, googleProvider);
+    } catch (e) {
+        alert("❌ Помилка входу через Google: " + e.message);
+    }
+}
+
+async function handleLogout() {
+    await signOut(auth);
+    window.location.href = 'index.html';
+}
+
+function loadAdminUserManagement() {
+    const container = document.getElementById('adminUsersList');
+    if (!container) return;
+
+    const usersRef = ref(db, 'users');
+    onValue(usersRef, (snapshot) => {
+        if (!snapshot.exists()) {
+            container.innerHTML = '<p>Користувачів немає.</p>';
+            return;
+        }
+
+        const users = snapshot.val();
+        let html = `
+            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+                <thead>
+                    <tr style="background:#edf2f7; text-align:left;">
+                        <th style="padding:8px; border:1px solid #cbd5e0;">Email</th>
+                        <th style="padding:8px; border:1px solid #cbd5e0;">Поточна роль</th>
+                        <th style="padding:8px; border:1px solid #cbd5e0;">Дії (Зміна ролі)</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        Object.keys(users).forEach(uid => {
+            const u = users[uid];
+            const isOwnerAcc = isOwnerEmail(u.email);
+
+            html += `
+                <tr>
+                    <td style="padding:8px; border:1px solid #cbd5e0;">${u.email}</td>
+                    <td style="padding:8px; border:1px solid #cbd5e0;"><b>${u.role || 'student'}</b></td>
+                    <td style="padding:8px; border:1px solid #cbd5e0;">
+                        ${isOwnerAcc ? '<i>Власник (Головний Адмін)</i>' : `
+                            <button onclick="setUserRole('${uid}', 'teacher')" class="btn primary-btn" style="padding:4px 8px; font-size:0.8rem;">Зробити Вчителем</button>
+                            <button onclick="setUserRole('${uid}', 'student')" class="btn danger-btn" style="padding:4px 8px; font-size:0.8rem;">Зробити Учнем</button>
+                        `}
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    });
+}
+
+async function setUserRole(uid, role) {
+    try {
+        await update(ref(db, `users/${uid}`), { role: role });
+        alert(`✅ Роль успішно змінено на ${role}`);
+    } catch (e) {
+        alert("Помилка зміни ролі: " + e.message);
+    }
+}
+
+// ==========================================
+// 4. ІНІЦІАЛІЗАЦІЯ МОДУЛІВ ДОДАТКУ
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -78,7 +298,7 @@ function setupGlobalResizeListeners() {
 }
 
 // ==========================================
-// 3. ТЕЛЕГРАМ ІНТЕГРАЦІЯ ТА ДОПОМІЖНІ ФУНКЦІЇ
+// 5. ТЕЛЕГРАМ ІНТЕГРАЦІЯ
 // ==========================================
 
 async function fetchMyChatId() {
@@ -146,7 +366,7 @@ function sendTelegramNotification(chatId, messageText) {
 }
 
 // ==========================================
-// 4. ПАНЕЛЬ ВЧИТЕЛЯ (КОНСТРУКТОР)
+// 6. ПАНЕЛЬ ВЧИТЕЛЯ (КОНСТРУКТОР ТЕСТІВ)
 // ==========================================
 
 function initTeacherPanel() {
@@ -162,33 +382,25 @@ function initTeacherPanel() {
 
     if (!teacherMapImage) return;
 
-    // Обробка файлу зображення з ПК
     if (mapFileInput) {
         mapFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = (evt) => {
-                    loadTeacherMapImage(evt.target.result);
-                };
+                reader.onload = (evt) => loadTeacherMapImage(evt.target.result);
                 reader.readAsDataURL(file);
             }
         });
     }
 
-    // Обробка зображення за посиланням
     if (loadMapBtn && mapUrlInput) {
         loadMapBtn.addEventListener('click', () => {
             const url = mapUrlInput.value.trim();
-            if (url) {
-                loadTeacherMapImage(url);
-            } else {
-                alert('Введіть коректне посилання на зображення!');
-            }
+            if (url) loadTeacherMapImage(url);
+            else alert('Введіть коректне посилання на зображення!');
         });
     }
 
-    // Зміна типу завдання
     if (taskTypeSelect) {
         taskTypeSelect.addEventListener('change', (e) => {
             currentTaskType = e.target.value;
@@ -196,20 +408,9 @@ function initTeacherPanel() {
         });
     }
 
-    // Очищення контуру
-    if (clearShapeBtn) {
-        clearShapeBtn.addEventListener('click', clearCurrentShape);
-    }
-
-    // Додавання завдання
-    if (addTaskBtn) {
-        addTaskBtn.addEventListener('click', addNewTeacherTask);
-    }
-
-    // Збереження тесту
-    if (saveTestBtn) {
-        saveTestBtn.addEventListener('click', saveTestAndGenerateCode);
-    }
+    if (clearShapeBtn) clearShapeBtn.addEventListener('click', clearCurrentShape);
+    if (addTaskBtn) addTaskBtn.addEventListener('click', addNewTeacherTask);
+    if (saveTestBtn) saveTestBtn.addEventListener('click', saveTestAndGenerateCode);
 
     renderTeacherHistoryList();
 }
@@ -227,9 +428,7 @@ function loadTeacherMapImage(src) {
         clearCurrentShape();
     };
 
-    teacherMapImage.onerror = () => {
-        alert('Помилка завантаження зображення! Перевірте файл або посилання.');
-    };
+    teacherMapImage.onerror = () => alert('Помилка завантаження зображення!');
 }
 
 function setupTeacherCanvas() {
@@ -274,11 +473,8 @@ function handleTeacherPointerDown(e) {
         redrawTeacherCanvas();
     } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
         isTeacherDrawing = true;
-        if (currentDrawingMode === 'outer') {
-            donutOuterPolygon.push(point);
-        } else {
-            donutInnerPolygon.push(point);
-        }
+        if (currentDrawingMode === 'outer') donutOuterPolygon.push(point);
+        else donutInnerPolygon.push(point);
         redrawTeacherCanvas();
     }
 }
@@ -288,19 +484,14 @@ function handleTeacherPointerMove(e) {
     const point = getNormalizedCoordinates(e, 'teacherMapImage');
 
     if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
-        if (currentDrawingMode === 'outer') {
-            donutOuterPolygon.push(point);
-        } else {
-            donutInnerPolygon.push(point);
-        }
+        if (currentDrawingMode === 'outer') donutOuterPolygon.push(point);
+        else donutInnerPolygon.push(point);
         redrawTeacherCanvas();
     }
 }
 
 function handleTeacherPointerUp() {
-    if (isTeacherDrawing) {
-        isTeacherDrawing = false;
-    }
+    isTeacherDrawing = false;
 }
 
 function redrawTeacherCanvas() {
@@ -316,27 +507,11 @@ function redrawTeacherCanvas() {
     const w = canvas.width;
     const h = canvas.height;
 
-    if (currentStandardPoint) {
-        drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e', 'Еталон');
-    }
-
-    if (multiMarkers.length > 0) {
-        multiMarkers.forEach((pt, i) => {
-            drawPointOnContext(ctx, pt, w, h, '#3182ce', (i + 1).toString());
-        });
-    }
-
-    if (currentPolyline.length > 0) {
-        drawPolylineOnContext(ctx, currentPolyline, w, h, '#d69e2e');
-    }
-
-    if (donutOuterPolygon.length > 1) {
-        drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.3)');
-    }
-
-    if (donutInnerPolygon.length > 1) {
-        drawPolygonOnContext(ctx, donutInnerPolygon, w, h, '#e53e3e', 'rgba(229, 62, 62, 0.4)');
-    }
+    if (currentStandardPoint) drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e', 'Еталон');
+    if (multiMarkers.length > 0) multiMarkers.forEach((pt, i) => drawPointOnContext(ctx, pt, w, h, '#3182ce', (i + 1).toString()));
+    if (currentPolyline.length > 0) drawPolylineOnContext(ctx, currentPolyline, w, h, '#d69e2e');
+    if (donutOuterPolygon.length > 1) drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.3)');
+    if (donutInnerPolygon.length > 1) drawPolygonOnContext(ctx, donutInnerPolygon, w, h, '#e53e3e', 'rgba(229, 62, 62, 0.4)');
 }
 
 function addNewTeacherTask() {
@@ -346,52 +521,29 @@ function addNewTeacherTask() {
     const instruction = instructionInput ? instructionInput.value.trim() : '';
     const points = pointsInput ? parseInt(pointsInput.value) || 2 : 2;
 
-    if (!instruction) {
-        alert('Будь ласка, введіть інструкцію/текст завдання!');
-        return;
-    }
+    if (!instruction) return alert('Введіть інструкцію завдання!');
 
-    let taskData = {
-        id: Date.now(),
-        type: currentTaskType,
-        instruction: instruction,
-        points: points
-    };
+    let taskData = { id: Date.now(), type: currentTaskType, instruction, points };
 
     if (currentTaskType === 'point' || currentTaskType === 'marker') {
-        if (!currentStandardPoint) {
-            alert('Позначте еталонну точку на карті!');
-            return;
-        }
+        if (!currentStandardPoint) return alert('Позначте еталонну точку на карті!');
         taskData.standardPoint = currentStandardPoint;
     } else if (currentTaskType === 'multi-point' || currentTaskType === 'multi-marker') {
-        if (multiMarkers.length < 2) {
-            alert('Поставить хоча б 2 мітки на карті!');
-            return;
-        }
+        if (multiMarkers.length < 2) return alert('Поставте хоча б 2 мітки!');
         taskData.multiPoints = [...multiMarkers];
     } else if (currentTaskType === 'line') {
-        if (currentPolyline.length < 2) {
-            alert('Намалюйте лінію або маршрут (мінімум 2 точки)!');
-            return;
-        }
+        if (currentPolyline.length < 2) return alert('Намалюйте лінію (мін. 2 точки)!');
         taskData.polyline = [...currentPolyline];
     } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
-        if (donutOuterPolygon.length < 3) {
-            alert('Намалюйте замкнену область на карті (мінімум 3 точки)!');
-            return;
-        }
-        taskData.polygon = {
-            outer: [...donutOuterPolygon],
-            inner: [...donutInnerPolygon]
-        };
+        if (donutOuterPolygon.length < 3) return alert('Намалюйте область (мін. 3 точки)!');
+        taskData.polygon = { outer: [...donutOuterPolygon], inner: [...donutInnerPolygon] };
     }
 
     currentTest.tasks.push(taskData);
     instructionInput.value = '';
     clearCurrentShape();
     renderTeacherTasksList();
-    alert('✅ Завдання додано до списку!');
+    alert('✅ Завдання додано!');
 }
 
 function renderTeacherTasksList() {
@@ -399,7 +551,7 @@ function renderTeacherTasksList() {
     if (!container) return;
 
     if (currentTest.tasks.length === 0) {
-        container.innerHTML = '<p style="color: #a0aec0; font-style: italic;">Завдань поки немає.</p>';
+        container.innerHTML = '<p style="color:#a0aec0; font-style:italic;">Завдань поки немає.</p>';
         return;
     }
 
@@ -433,26 +585,23 @@ function removeTeacherTask(index) {
 
 async function saveTestAndGenerateCode() {
     const titleInput = document.getElementById('testTitle');
+    const chatIdInput = document.getElementById('teacherChatId');
+
     const title = titleInput ? titleInput.value.trim() : '';
+    const telegramChatId = chatIdInput ? chatIdInput.value.trim() : '';
 
-    if (!title) {
-        alert('Укажіть назву тесту!');
-        return;
-    }
-
-    if (currentTest.tasks.length === 0) {
-        alert('Створіть хоча б одне завдання!');
-        return;
-    }
+    if (!title) return alert('Укажіть назву тесту!');
+    if (currentTest.tasks.length === 0) return alert('Створіть хоча б одне завдання!');
 
     const code = generateUnique10Code();
     currentTest.id = code;
     currentTest.title = title;
+    currentTest.telegramChatId = telegramChatId;
     currentTest.createdAt = new Date().toLocaleString('uk-UA');
+    currentTest.authorUid = currentUser ? currentUser.uid : 'anonymous';
 
     try {
-        const testRef = ref(db, 'tests/' + code);
-        await set(testRef, currentTest);
+        await set(ref(db, 'tests/' + code), currentTest);
 
         const codeSec = document.getElementById('generatedCodeSection');
         const codeDisplay = document.getElementById('testCodeDisplay');
@@ -522,7 +671,7 @@ async function deleteTest(code) {
 }
 
 // ==========================================
-// 5. ПАНЕЛЬ УЧНЯ (ПРОХОДЖЕННЯ)
+// 7. ПАНЕЛЬ УЧНЯ (ПРОХОДЖЕННЯ ТЕСТУ)
 // ==========================================
 
 function initStudentPanel() {
@@ -532,24 +681,17 @@ function initStudentPanel() {
     const urlParams = new URLSearchParams(window.location.search);
     const codeFromUrl = urlParams.get('code');
 
-    if (codeFromUrl) {
-        loadTestByCode(codeFromUrl);
-    }
+    if (codeFromUrl) loadTestByCode(codeFromUrl);
 
     if (loadTestBtn) {
         loadTestBtn.addEventListener('click', () => {
             const inputCode = document.getElementById('studentCodeInput').value.trim();
-            if (inputCode) {
-                loadTestByCode(inputCode);
-            } else {
-                alert('Введіть 10-значний код тесту!');
-            }
+            if (inputCode) loadTestByCode(inputCode);
+            else alert('Введіть 10-значний код тесту!');
         });
     }
 
-    if (submitWorkBtn) {
-        submitWorkBtn.addEventListener('click', checkStudentWork);
-    }
+    if (submitWorkBtn) submitWorkBtn.addEventListener('click', checkStudentWork);
 }
 
 async function loadTestByCode(code) {
@@ -560,10 +702,7 @@ async function loadTestByCode(code) {
         test = history[code];
     }
 
-    if (!test) {
-        alert('❌ Тест із таким кодом не знайдено!');
-        return;
-    }
+    if (!test) return alert('❌ Тест із таким кодом не знайдено!');
 
     loadedTest = test;
     loadedTestCode = code;
@@ -605,10 +744,7 @@ function setupStudentCanvas() {
 }
 
 function handleStudentPointerDown(e) {
-    if (activeTaskIndex === null) {
-        alert('Оберіть завдання зі списку нижче!');
-        return;
-    }
+    if (activeTaskIndex === null) return alert('Оберіть завдання зі списку нижче!');
 
     const task = loadedTest.tasks[activeTaskIndex];
     const pt = getNormalizedCoordinates(e, 'studentMapImage');
@@ -748,7 +884,7 @@ function selectTaskForStudent(idx) {
 }
 
 // ==========================================
-// 6. АЛГОРИТМИ ПЕРЕВІРКИ ТА ОБЧИСЛЕНЬ
+// 8. ПЕРЕВІРКА ВІДПОВІДЕЙ ТА МАТЕМАТИКА
 // ==========================================
 
 async function checkStudentWork() {
@@ -758,10 +894,7 @@ async function checkStudentWork() {
     const name = nameInput ? nameInput.value.trim() : '';
     const studentClass = classInput ? classInput.value.trim() : '';
 
-    if (!name) {
-        alert("Введіть своє Ім'я та Прізвище!");
-        return;
-    }
+    if (!name) return alert("Введіть своє Ім'я та Прізвище!");
 
     let earnedPoints = 0;
     let maxPoints = 0;
@@ -775,7 +908,7 @@ async function checkStudentWork() {
         if (ans) {
             if (task.type === 'point' || task.type === 'marker') {
                 const dist = getDistance(ans, task.standardPoint);
-                isCorrect = dist <= 4.0; // Допуск 4%
+                isCorrect = dist <= 4.0;
             } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
                 if (Array.isArray(ans) && ans.length === task.multiPoints.length) {
                     let matches = 0;
@@ -808,10 +941,8 @@ async function checkStudentWork() {
     if (scoreSummary) scoreSummary.innerText = `Набрано балів: ${earnedPoints} з ${maxPoints}`;
     if (detailedReport) detailedReport.innerText = reportText;
 
-    // Збереження у Firebase
     await sendStudentResultToFirebase(loadedTestCode, name, studentClass, earnedPoints, maxPoints, reportText);
 
-    // Сповіщення в Telegram
     if (loadedTest.telegramChatId) {
         const msg = `📊 <b>Результат тесту!</b>\n\n` +
                     `📖 <b>Тест:</b> ${loadedTest.title}\n` +
@@ -855,9 +986,7 @@ function checkPolygonMatch(studentPoly, teacherPoly) {
         const inOuter = isPointInPolygon(pt, outer);
         const inInner = inner.length > 2 ? isPointInPolygon(pt, inner) : false;
 
-        if (inOuter && !inInner) {
-            insideValidArea++;
-        }
+        if (inOuter && !inInner) insideValidArea++;
     });
 
     return (insideValidArea / studentPoly.length) >= 0.75;
@@ -878,7 +1007,7 @@ function isPointInPolygon(pt, polygon) {
 }
 
 // ==========================================
-// 7. РЕНДЕРУВАННЯ ГРАФІКИ (CANVAS)
+// 9. ОПТИМІЗОВАНИЙ РЕНДЕРУВАННЯ ГРАФІКИ
 // ==========================================
 
 function drawPointOnContext(ctx, point, w, h, color, label = '') {
@@ -958,15 +1087,13 @@ function generateUnique10Code() {
 }
 
 // ==========================================
-// 8. РОБОТА З FIREBASE REALTIME DATABASE
+// 10. ВЗАЄМОДІЯ З FIREBASE DATABASE
 // ==========================================
 
 async function loadTestFromFirebase(code) {
     try {
         const snapshot = await get(child(ref(db), `tests/${code}`));
-        if (snapshot.exists()) {
-            return snapshot.val();
-        }
+        if (snapshot.exists()) return snapshot.val();
     } catch (e) {
         console.error("Firebase Load Error:", e);
     }
@@ -984,7 +1111,8 @@ async function sendStudentResultToFirebase(code, name, studentClass, score, maxS
             score: score,
             maxScore: maxScore,
             report: report,
-            timestamp: new Date().toLocaleString('uk-UA')
+            timestamp: new Date().toLocaleString('uk-UA'),
+            studentUid: currentUser ? currentUser.uid : 'guest'
         });
     } catch (e) {
         console.error("Firebase Result Error:", e);
@@ -992,7 +1120,7 @@ async function sendStudentResultToFirebase(code, name, studentClass, score, maxS
 }
 
 // ==========================================
-// 9. АДМІН-ПАНЕЛЬ ТА ЖУРНАЛ ОЦІНОК
+// 11. АДМІН-ПАНЕЛЬ ТА ЖУРНАЛ ОЦІНОК
 // ==========================================
 
 function initAdminPanel() {
