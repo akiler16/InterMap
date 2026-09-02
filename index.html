@@ -234,6 +234,7 @@
                     <button id="btnLogin" class="btn btn-teacher" style="padding:8px;">Увійти</button>
                     <button id="btnRegister" class="btn btn-student" style="padding:8px;">Зареєструватися</button>
                 </div>
+                <button id="btnGoogle" class="btn btn-google" style="padding:8px;">Увійти через Google</button>
             </div>
         </div>
 
@@ -397,6 +398,12 @@
                 const password = document.getElementById('passwordInput')?.value.trim();
                 if (window.FirebaseAuthModule) {
                     await window.FirebaseAuthModule.register(email, password);
+                }
+            });
+
+            document.getElementById('btnGoogle')?.addEventListener('click', async () => {
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.googleLogin();
                 }
             });
 
