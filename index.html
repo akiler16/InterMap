@@ -45,7 +45,6 @@
             margin-bottom: 25px;
         }
 
-        /* Блок автентифікації */
         .auth-card {
             background: #edf2f7;
             border: 1px solid #cbd5e0;
@@ -193,7 +192,6 @@
             padding-top: 15px;
         }
 
-        /* Modal Structure */
         .modal {
             display: none;
             position: fixed;
@@ -221,13 +219,6 @@
 </head>
 <body>
 
-
-    <!-- 1. Підключаємо Firebase сервіс як модуль -->
-    <script type="module" src="firebase-service.js"></script>
-
-     <!-- 2. Після нього підключаємо ваші основні скрипти -->
-    <script src="script.js"></script>
-    
     <div class="container">
         <h1 id="mainTitle">🗺️ Ласкаво просимо до Intermap</h1>
         <p class="subtitle" id="mainNotice">Платформа для створення та проходження геометричних і контурних тестів</p>
@@ -240,10 +231,9 @@
                 <input type="password" id="passwordInput" placeholder="Пароль">
                 
                 <div class="auth-buttons">
-                    <button onclick="handleEmailLogin()" class="btn btn-teacher" style="padding:8px;">Увійти</button>
-                    <button onclick="handleEmailRegister()" class="btn btn-student" style="padding:8px;">Зареєструватися</button>
+                    <button id="btnLogin" class="btn btn-teacher" style="padding:8px;">Увійти</button>
+                    <button id="btnRegister" class="btn btn-student" style="padding:8px;">Зареєструватися</button>
                 </div>
-                <button onclick="handleGoogleLogin()" class="btn btn-google" style="padding:8px;">Увійти через Google</button>
             </div>
         </div>
 
@@ -253,7 +243,7 @@
                 👤 <b><span id="userEmailSpan">user@example.com</span></b> 
                 (<span id="userRoleSpan" style="color:#2b6cb0; font-weight:bold;">student</span>)
             </div>
-            <button onclick="handleLogout()" class="btn" style="width:auto; padding: 6px 14px; background:#e53e3e; color:white; font-size:0.85rem;">Вийти</button>
+            <button id="btnLogout" class="btn" style="width:auto; padding: 6px 14px; background:#e53e3e; color:white; font-size:0.85rem;">Вийти</button>
         </div>
 
         <div class="cards-grid">
@@ -317,7 +307,13 @@
         </div>
     </div>
 
-    <!-- FIREBASE SDK v10 MODULE -->
+    <!-- 1. ПІДКТЮЧЕННЯ FIREBASE СЕРВІСУ -->
+    <script type="module" src="firebase-service.js"></script>
+
+    <!-- 2. ГОЛОВНИЙ СКРИПТ ЛОГІКИ -->
+    <script type="module" src="script.js"></script>
+
+    <!-- 3. ОБРОБНИКИ ПОДІЙ ТА ПЕРЕВІРКИ СТОРІНКИ -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -384,41 +380,62 @@
             }
         }
 
-        document.getElementById('submitAuthBtn').addEventListener('click', verifyTripleAuth);
-        checkSiteAccess();
-    </script>
+        // Прив'язка подій після завантаження DOM
+        document.addEventListener('DOMContentLoaded', () => {
+            checkSiteAccess();
 
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ АВТОРИЗАЦІЇ ТА КАРТ -->
-    <script type="module" src="script.js"></script>
+            document.getElementById('btnLogin')?.addEventListener('click', async () => {
+                const email = document.getElementById('emailInput')?.value.trim();
+                const password = document.getElementById('passwordInput')?.value.trim();
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.login(email, password);
+                }
+            });
 
-    <script>
-        document.getElementById('openAdminModalBtn').addEventListener('click', () => {
-            document.getElementById('adminAuthModal').style.display = 'flex';
-        });
+            document.getElementById('btnRegister')?.addEventListener('click', async () => {
+                const email = document.getElementById('emailInput')?.value.trim();
+                const password = document.getElementById('passwordInput')?.value.trim();
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.register(email, password);
+                }
+            });
 
-        document.getElementById('closeAdminModalBtn').addEventListener('click', () => {
-            document.getElementById('adminAuthModal').style.display = 'none';
-        });
+            document.getElementById('btnLogout')?.addEventListener('click', async () => {
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.logout();
+                }
+            });
 
-        document.getElementById('startTestBtn').addEventListener('click', () => {
-            if (window.blockStudents) {
-                alert('🔒 Проходження тестів тимчасово заблоковано адміністратором.');
-                return;
-            }
+            document.getElementById('submitAuthBtn')?.addEventListener('click', verifyTripleAuth);
 
-            const code = document.getElementById('quickCodeInput').value.trim();
-            if (code) {
-                window.location.href = `student.html?code=${encodeURIComponent(code)}`;
-            } else {
-                alert('Будь ласка, введіть код тесту!');
-            }
-        });
+            document.getElementById('openAdminModalBtn')?.addEventListener('click', () => {
+                document.getElementById('adminAuthModal').style.display = 'flex';
+            });
 
-        document.getElementById('teacherLink').addEventListener('click', (e) => {
-            if (window.blockTeacher) {
-                e.preventDefault();
-                alert('🔒 Доступ до панелі вчителя тимчасово заблоковано адміністратором.');
-            }
+            document.getElementById('closeAdminModalBtn')?.addEventListener('click', () => {
+                document.getElementById('adminAuthModal').style.display = 'none';
+            });
+
+            document.getElementById('startTestBtn')?.addEventListener('click', () => {
+                if (window.blockStudents) {
+                    alert('🔒 Проходження тестів тимчасово заблоковано адміністратором.');
+                    return;
+                }
+
+                const code = document.getElementById('quickCodeInput').value.trim();
+                if (code) {
+                    window.location.href = `student.html?code=${encodeURIComponent(code)}`;
+                } else {
+                    alert('Будь ласка, введіть код тесту!');
+                }
+            });
+
+            document.getElementById('teacherLink')?.addEventListener('click', (e) => {
+                if (window.blockTeacher) {
+                    e.preventDefault();
+                    alert('🔒 Доступ до панелі вчителя тимчасово заблоковано адміністратором.');
+                }
+            });
         });
     </script>
 </body>
