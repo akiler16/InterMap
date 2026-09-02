@@ -81,13 +81,12 @@ const IntermapState = {
     currentUser: null,
     activeTest: null,
     currentQuestionIndex: 0,
-    userAnswers: [], // { questionId, selectedShapeId, clickCoords, isCorrect, timeSpent }
+    userAnswers: [], 
     score: 0,
     timerInterval: null,
     timeRemaining: 0,
     totalTimeSpent: 0,
     
-    // Стан інтерактивного Canvas для учня
     studentCanvas: {
         element: null,
         ctx: null,
@@ -104,13 +103,12 @@ const IntermapState = {
         clicksHistory: []
     },
 
-    // Налаштування теми та аудіо
     soundEnabled: true,
     darkTheme: true
 };
 
 // ============================================================================
-// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ ТА ПОДІЙ (FIREBASE INTEGRATED)
+// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ ТА ПОДІЙ
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -126,17 +124,13 @@ const IntermapEngine = {
     },
 
     initUIControls() {
-        // --- 1. Модальні вікна та Навігація ---
         const loginBtn = document.getElementById('loginModalBtn');
         if (loginBtn) loginBtn.addEventListener('click', () => UI.showModal('authModal'));
 
         document.querySelectorAll('.close-modal-btn').forEach(btn => {
             btn.addEventListener('click', () => UI.closeAllModals());
         });
-
-        // --- 2. Авторизація через Firebase ---
         
-        // Кнопка Входу (Email + Пароль)
         const loginSubmitBtn = document.getElementById('loginSubmitBtn');
         if (loginSubmitBtn) {
             loginSubmitBtn.addEventListener('click', async (e) => {
@@ -150,7 +144,6 @@ const IntermapEngine = {
             });
         }
 
-        // Кнопка Реєстрації
         const registerSubmitBtn = document.getElementById('registerSubmitBtn');
         if (registerSubmitBtn) {
             registerSubmitBtn.addEventListener('click', async (e) => {
@@ -164,7 +157,6 @@ const IntermapEngine = {
             });
         }
 
-        // Кнопка Потрійної Авторизації (Для Адміна)
         const tripleAuthBtn = document.getElementById('tripleAuthSubmitBtn');
         if (tripleAuthBtn) {
             tripleAuthBtn.addEventListener('click', async (e) => {
@@ -180,7 +172,6 @@ const IntermapEngine = {
             });
         }
 
-        // --- 3. Контролери та Фільтри ---
         const catalogFilterBtns = document.querySelectorAll('.catalog-filter-btn');
         catalogFilterBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -203,12 +194,10 @@ const IntermapEngine = {
         if (window.AudioEngine) AudioEngine.init();
     },
 
-    // Отримання тесту з Firebase Realtime Database
     loadCatalog(category = 'all') {
         const catalogContainer = document.getElementById('testsCatalogGrid');
         if (!catalogContainer) return;
 
-        // Зчитуємо дані з бази у реальному часі
         if (window.FirebaseDB) {
             window.FirebaseDB.listenToTests((tests) => {
                 const filtered = category === 'all' 
@@ -283,7 +272,7 @@ const IntermapEngine = {
 };
 
 // ============================================================================
-// 3. АВТОРИЗАЦІЯ (ПЕРЕНЕРАХОВАНО НА FIREBASE)
+// 3. АВТОРИЗАЦІЯ
 // ============================================================================
 
 const AuthModule = {
@@ -293,8 +282,9 @@ const AuthModule = {
         }
     }
 };
+
 // ============================================================================
-// 4. CANVAS ENGINE (ВІДМАЛЬОВКА, HIT-TESTING, RAY-CASTING)
+// 4. CANVAS ENGINE
 // ============================================================================
 
 const CanvasEngine = {
@@ -305,7 +295,6 @@ const CanvasEngine = {
         IntermapState.studentCanvas.element = canvas;
         IntermapState.studentCanvas.ctx = canvas.getContext('2d');
 
-        // Додавання обробників подій миші та тач-скріна
         canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
         canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         canvas.addEventListener('mouseup', () => this.handleMouseUp());
@@ -375,7 +364,7 @@ const CanvasEngine = {
     },
 
     handleMouseDown(e) {
-        if (e.button === 1 || e.shiftKey) { // Середня кнопка миші або Shift+ЛКМ для панорамування
+        if (e.button === 1 || e.shiftKey) { 
             const c = IntermapState.studentCanvas;
             c.isPanning = true;
             c.startPanX = e.clientX - c.panX;
@@ -392,7 +381,6 @@ const CanvasEngine = {
             return;
         }
 
-        // Перевірка наведення курсора на області (Hover hit-testing)
         const coords = this.getTransformedCoords(e);
         const test = IntermapState.activeTest;
         if (!test || !test.shapes) return;
@@ -430,7 +418,6 @@ const CanvasEngine = {
         const test = IntermapState.activeTest;
         if (!test) return;
 
-        // Визначаємо, в яку фігуру влучив користувач
         let clickedShape = null;
         if (test.shapes) {
             for (let shape of test.shapes) {
@@ -441,22 +428,17 @@ const CanvasEngine = {
             }
         }
 
-        // Зберігаємо візуальну точку кліку
         c.clicksHistory.push({
             x: coords.x,
             y: coords.y,
             isCorrect: clickedShape ? true : false
         });
 
-        // Передаємо відповідь у QuizEngine
         QuizEngine.processStudentAnswer(clickedShape, coords);
         redrawStudentCanvas();
     }
 };
 
-/**
- * Головна функція перемалювання Canvas (Завершено та відновлено)
- */
 function redrawStudentCanvas() {
     const canvas = document.getElementById('studentCanvas');
     const c = IntermapState.studentCanvas;
@@ -469,7 +451,6 @@ function redrawStudentCanvas() {
     ctx.translate(c.panX, c.panY);
     ctx.scale(c.zoom, c.zoom);
 
-    // 1. Відмальовка фонової карти
     if (c.image && c.isLoaded) {
         ctx.drawImage(c.image, 0, 0, canvas.width, canvas.height);
     } else {
@@ -481,7 +462,6 @@ function redrawStudentCanvas() {
         ctx.fillText('Завантаження інтерактивної карти...', canvas.width / 2, canvas.height / 2);
     }
 
-    // 2. Відмальовка інтерактивних областей (Shapes)
     const test = IntermapState.activeTest;
     if (test && test.shapes) {
         test.shapes.forEach(shape => {
@@ -513,7 +493,6 @@ function redrawStudentCanvas() {
         });
     }
 
-    // 3. Відмальовка точок кліків учня
     c.clicksHistory.forEach(click => {
         ctx.beginPath();
         ctx.arc(click.x, click.y, 5 / c.zoom, 0, Math.PI * 2);
@@ -528,7 +507,7 @@ function redrawStudentCanvas() {
 }
 
 // ============================================================================
-// 5. ГЕОМЕТРИЧНИЙ РУШІЙ (RAY-CASTING POINT-IN-POLYGON)
+// 5. ГЕОМЕТРИЧНИЙ РУШІЙ
 // ============================================================================
 
 const Geometry = {
@@ -539,7 +518,7 @@ const Geometry = {
             const target = shape.points[0];
             if (!target) return false;
             const dist = Math.hypot(point.x - target.x, point.y - target.y);
-            return dist <= 15; // Радіус кліку для точки
+            return dist <= 15; 
         }
 
         if (shape.type === 'polygon') {
@@ -549,9 +528,6 @@ const Geometry = {
         return false;
     },
 
-    /**
-     * Алгоритм Ray-Casting для виявлення точок всередині довільного багатокутника
-     */
     rayCastIntersect(point, vs) {
         const x = point.x, y = point.y;
         let inside = false;
@@ -570,7 +546,7 @@ const Geometry = {
 };
 
 // ============================================================================
-// 6. КУРС ТА ТЕСТОВИЙ РУШІЙ (QUIZ ENGINE)
+// 6. КУРС ТА ТЕСТОВИЙ РУШІЙ
 // ============================================================================
 
 const QuizEngine = {
@@ -606,7 +582,7 @@ const QuizEngine = {
 
     startTimer() {
         this.stopTimer();
-        IntermapState.timeRemaining = 300; // 5 хвилин на тест
+        IntermapState.timeRemaining = 300; 
         this.updateTimerDisplay();
 
         IntermapState.timerInterval = setInterval(() => {
@@ -690,7 +666,6 @@ const QuizEngine = {
             isCorrect: isCorrect
         });
 
-        // Перехід до наступного питання або завершення
         if (IntermapState.currentQuestionIndex + 1 < test.questions.length) {
             IntermapState.currentQuestionIndex++;
             setTimeout(() => this.renderCurrentQuestion(), 600);
@@ -705,7 +680,6 @@ const QuizEngine = {
         const totalQuestions = test.questions ? test.questions.length : 1;
         const finalScorePercentage = Math.round((IntermapState.score / totalQuestions) * 100);
 
-        // Збереження результату в локальну БД
         const submission = {
             id: Date.now(),
             userEmail: IntermapState.currentUser ? IntermapState.currentUser.email : 'Гість (Анонім)',
@@ -729,7 +703,7 @@ const QuizEngine = {
 };
 
 // ============================================================================
-// 7. СИНТЕЗАТОР ЗВУКОВИХ ЕФЕКТІВ (WEB AUDIO API)
+// 7. СИНТЕЗАТОР ЗВУКОВИХ ЕФЕКТІВ
 // ============================================================================
 
 const AudioEngine = {
@@ -759,8 +733,8 @@ const AudioEngine = {
 
         if (type === 'correct') {
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(523.25, now); // C5
-            osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+            osc.frequency.setValueAtTime(523.25, now); 
+            osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); 
             gain.gain.setValueAtTime(0.2, now);
             gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
             osc.start(now);
@@ -794,7 +768,7 @@ const AudioEngine = {
 };
 
 // ============================================================================
-// 8. ІНТЕРФЕЙС, МОДАЛЬНІ ВІКНА ТА СПОВІЩЕННЯ
+// 8. ІНТЕРФЕЙС ТА МОДАЛЬНІ ВІКНА
 // ============================================================================
 
 const UI = {
@@ -838,7 +812,6 @@ const UI = {
             return;
         }
 
-        // Сортування за найвищим балом
         const sorted = [...subs].sort((a, b) => b.score - a.score).slice(0, 10);
         tbody.innerHTML = sorted.map((item, idx) => `
             <tr>
@@ -904,7 +877,7 @@ const UI = {
 };
 
 // ============================================================================
-// 9. ДОПОМІЖНІ УТИЛІТИ (UTILS)
+// 9. ДОПОМІЖНІ УТИЛІТИ
 // ============================================================================
 
 const Utils = {
