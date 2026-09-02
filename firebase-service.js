@@ -185,4 +185,7 @@ onAuthStateChanged(auth, async (user) => {
     if (window.IntermapEngine && window.IntermapEngine.updateUserInterface) {
         window.IntermapEngine.updateUserInterface();
     }
+    // Робимо модулі глобально доступними для script.js та admin.js
+    window.FirebaseAuthModule = FirebaseAuthModule;
+    window.FirebaseDB = FirebaseDB;
 });
