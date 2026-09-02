@@ -316,9 +316,9 @@
 
     <!-- 3. ОБРОБНИКИ ПОДІЙ ТА ПЕРЕВІРКИ СТОРІНКИ -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
+        
         const firebaseConfig = {
             apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
             authDomain: "intermap-app.firebaseapp.com",
@@ -330,7 +330,7 @@
             measurementId: "G-QB0SF133NB"
         };
 
-        const app = initializeApp(firebaseConfig);
+        const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
         const db = getDatabase(app);
 
         // Перевірка обмежень доступу сайту
