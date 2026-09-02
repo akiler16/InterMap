@@ -1,1183 +1,971 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { 
-    getDatabase, ref, get, set, remove, push, child, update, onValue 
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { 
-    getAuth, 
-    createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, 
-    signOut, 
-    onAuthStateChanged,
-    GoogleAuthProvider,
-    signInWithPopup,
-    setPersistence,
-    browserLocalPersistence
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+/**
+ * ============================================================================
+ * INTERMAP CORE CLIENT ENGINE (script.js)
+ * ============================================================================
+ * Інтерактивна навчальна платформа географічних та історичних карт.
+ * Повний клієнтський функціонал:
+ * - Потрійна авторизація (Google, Telegram, Admin Secret)
+ * - Canvas Engine для відтворення карт, зумування, панорамування
+ * - Ray-Casting Algorithm (Point-in-Polygon) для перевірки точного влучання
+ * - Система тестування та інтерактивних завдань у реальному часі
+ * - Web Audio API синтезатор звукових ефектів (без зовнішніх файлів)
+ * - Локальне сховище (LocalStorage DB), таблиця лідерів, історія та аналітика
+ * ==========================================
+ */
 
-// ==========================================
-// 1. КОНФІГУРАЦІЯ ТА ІНІЦІАЛІЗАЦІЯ FIREBASE
-// ==========================================
+// ============================================================================
+// 1. КОНФІГУРАЦІЯ ТА ГЛОБАЛЬНИЙ СТАН СИСТЕМИ
+// ============================================================================
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
-    authDomain: "intermap-app.firebaseapp.com",
-    databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "intermap-app",
-    storageBucket: "intermap-app.firebasestorage.app",
-    messagingSenderId: "869707502446",
-    appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f"
-};
-
-// ⚠️ ЕМЕЙЛИ ВЛАСНИКА ⚠️
-const OWNER_EMAILS = [
-    "vanyary16@gmai.com",
-    "vanyarybalka13@gmail.com"
-];
-
-// Ініціалізація Firebase
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
-
-// Сесія залишається активною поки не натиснути "Вийти"
-setPersistence(auth, browserLocalPersistence);
-
-// Telegram Bot Token
-const BOT_TOKEN = "8847524737:AAEUqbQzjtstH7uzvHSx0Dpx4B9G_HbFM2g";
-
-// Глобальний стан авторизації
-let currentUser = null;
-let currentUserRole = 'guest';
-
-// Глобальний стан конструктора Вчителя
-let currentTest = {
-    id: null,
-    title: '',
-    telegramChatId: '',
-    imageSrc: '',
-    tasks: []
-};
-
-// Стан малювання Вчителя
-let currentTaskType = 'point'; // 'point', 'multi-point', 'line', 'polygon', 'donut'
-let currentStandardPoint = null;
-let multiMarkers = [];
-let currentPolyline = [];
-let donutOuterPolygon = [];
-let donutInnerPolygon = [];
-let currentDrawingMode = 'outer';
-let isTeacherDrawing = false;
-let useRedZone = false;
-
-// Стан виконання Учня
-let loadedTest = null;
-let loadedTestCode = null;
-let activeTaskIndex = null;
-let studentAnswers = {}; 
-let isStudentDrawing = false;
-let currentStudentPolygon = [];
-let currentStudentLine = [];
-
-// Експорт функцій у глобальну область window (для HTML onclick)
-window.handleEmailRegister = handleEmailRegister;
-window.handleEmailLogin = handleEmailLogin;
-window.handleGoogleLogin = handleGoogleLogin;
-window.handleLogout = handleLogout;
-window.setUserRole = setUserRole;
-window.removeTeacherTask = removeTeacherTask;
-window.copyCodeLink = copyCodeLink;
-window.deleteTest = deleteTest;
-window.selectTaskForStudent = selectTaskForStudent;
-window.fetchMyChatId = fetchMyChatId;
-window.clearCurrentShape = clearCurrentShape;
-
-// ==========================================
-// 2. ВІДСТЕЖЕННЯ СТАНУ АВТОРИЗАЦІЇ ТА РОУТИНГ
-// ==========================================
-
-function isOwnerEmail(email) {
-    if (!email) return false;
-    return OWNER_EMAILS.some(ownerEmail => ownerEmail.toLowerCase() === email.toLowerCase());
-}
-
-onAuthStateChanged(auth, async (user) => {
-    currentUser = user;
-    const path = window.location.pathname;
-
-    if (user) {
-        const userRef = ref(db, `users/${user.uid}`);
-        const snapshot = await get(userRef);
-        const isOwner = isOwnerEmail(user.email);
-
-        if (!snapshot.exists()) {
-            currentUserRole = isOwner ? 'admin' : 'student';
-            await set(userRef, {
-                email: user.email,
-                role: currentUserRole,
-                createdAt: new Date().toLocaleString('uk-UA')
-            });
-        } else {
-            currentUserRole = snapshot.val().role || 'student';
-            if (isOwner && currentUserRole !== 'admin') {
-                currentUserRole = 'admin';
-                await update(userRef, { role: 'admin' });
+const INTERMAP_CONFIG = {
+    STORAGE_KEYS: {
+        TESTS: 'intermap_tests',
+        USERS: 'intermap_users',
+        SUBMISSIONS: 'intermap_submissions',
+        SETTINGS: 'intermap_settings',
+        AUTH_TOKEN: 'intermap_auth'
+    },
+    OWNER_EMAILS: [
+        "vanyary16@gmail.com",
+        "vanyarybalka13@gmail.com"
+    ],
+    TRIPLE_AUTH_SECRETS: {
+        TELEGRAM_USERNAME: "@IvanIntermap",
+        GOOGLE_KEY: "G-161013"
+    },
+    DEFAULT_MAP: {
+        id: 'ukraine_default',
+        title: 'Адміністративна карта України',
+        category: 'geography',
+        mapUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Administrative_map_of_Ukraine_2020.svg/1200px-Administrative_map_of_Ukraine_2020.svg.png',
+        shapes: [
+            {
+                id: 101,
+                label: 'Київська область',
+                type: 'polygon',
+                color: '#3b82f6',
+                points: [{ x: 450, y: 180 }, { x: 520, y: 170 }, { x: 530, y: 240 }, { x: 460, y: 250 }]
+            },
+            {
+                id: 102,
+                label: 'Львівська область',
+                type: 'polygon',
+                color: '#10b981',
+                points: [{ x: 120, y: 220 }, { x: 190, y: 210 }, { x: 180, y: 280 }, { x: 110, y: 270 }]
+            },
+            {
+                id: 103,
+                label: 'Одеська область',
+                type: 'polygon',
+                color: '#f59e0b',
+                points: [{ x: 380, y: 380 }, { x: 450, y: 370 }, { x: 440, y: 460 }, { x: 360, y: 450 }]
+            },
+            {
+                id: 104,
+                label: 'Київ (Столиця)',
+                type: 'point',
+                color: '#ef4444',
+                points: [{ x: 485, y: 205 }]
             }
-        }
-
-        updateUIForUser(user);
-
-        // Захист сторінки Вчителя
-        if (path.includes('teacher.html') && currentUserRole !== 'teacher' && currentUserRole !== 'admin') {
-            alert("❌ У вас немає прав доступу до панелі вчителя!");
-            window.location.href = 'index.html';
-        }
-
-    } else {
-        currentUserRole = 'guest';
-        if (path.includes('teacher.html')) {
-            window.location.href = 'index.html';
-        }
-        updateUIForGuest();
+        ],
+        questions: [
+            { id: 1, text: 'Знайдіть та виберіть Київську область', targetShapeId: 101 },
+            { id: 2, text: 'Знайдіть та виберіть Львівську область', targetShapeId: 102 },
+            { id: 3, text: 'Укажіть розташування Одеської області', targetShapeId: 103 },
+            { id: 4, text: 'Клацніть на точку, де розташована столиця України — Київ', targetShapeId: 104 }
+        ]
     }
+};
+
+const IntermapState = {
+    currentUser: null,
+    activeTest: null,
+    currentQuestionIndex: 0,
+    userAnswers: [], // { questionId, selectedShapeId, clickCoords, isCorrect, timeSpent }
+    score: 0,
+    timerInterval: null,
+    timeRemaining: 0,
+    totalTimeSpent: 0,
+    
+    // Стан інтерактивного Canvas для учня
+    studentCanvas: {
+        element: null,
+        ctx: null,
+        image: null,
+        isLoaded: false,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        isPanning: false,
+        startPanX: 0,
+        startPanY: 0,
+        hoveredShape: null,
+        selectedShape: null,
+        clicksHistory: []
+    },
+
+    // Налаштування теми та аудіо
+    soundEnabled: true,
+    darkTheme: true
+};
+
+// ============================================================================
+// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ ТА ПОДІЙ
+// ============================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    IntermapEngine.init();
 });
 
-function updateUIForUser(user) {
-    const userInfoBox = document.getElementById('userInfoBox');
-    const authFormBox = document.getElementById('authFormBox');
-    const userEmailSpan = document.getElementById('userEmailSpan');
-    const userRoleSpan = document.getElementById('userRoleSpan');
-    const teacherNavBtn = document.getElementById('teacherNavBtn');
-    const adminPanelSection = document.getElementById('adminPanelSection');
+const IntermapEngine = {
+    init() {
+        this.initStorage();
+        this.initAuth();
+        this.initCanvasEngine();
+        this.initUIControls();
+        this.initAudioSynthesizer();
+        this.loadCatalog();
+        this.updateUserInterface();
+    },
 
-    if (authFormBox) authFormBox.style.display = 'none';
-    if (userInfoBox) userInfoBox.style.display = 'block';
-    if (userEmailSpan) userEmailSpan.innerText = user.email;
-    if (userRoleSpan) userRoleSpan.innerText = currentUserRole;
-
-    if (teacherNavBtn) {
-        teacherNavBtn.style.display = (currentUserRole === 'teacher' || currentUserRole === 'admin') ? 'inline-block' : 'none';
-    }
-
-    if (adminPanelSection) {
-        if (currentUserRole === 'admin' || isOwnerEmail(user.email)) {
-            adminPanelSection.style.display = 'block';
-            loadAdminUserManagement();
-        } else {
-            adminPanelSection.style.display = 'none';
+    initStorage() {
+        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS)) {
+            localStorage.setItem(
+                INTERMAP_CONFIG.STORAGE_KEYS.TESTS,
+                JSON.stringify([INTERMAP_CONFIG.DEFAULT_MAP])
+            );
         }
-    }
-}
+        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS)) {
+            localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
+        }
+        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.USERS)) {
+            localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.USERS, JSON.stringify([]));
+        }
+    },
 
-function updateUIForGuest() {
-    const userInfoBox = document.getElementById('userInfoBox');
-    const authFormBox = document.getElementById('authFormBox');
-    const adminPanelSection = document.getElementById('adminPanelSection');
-    const teacherNavBtn = document.getElementById('teacherNavBtn');
+    initAuth() {
+        const savedAuth = localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+        if (savedAuth) {
+            try {
+                IntermapState.currentUser = JSON.parse(savedAuth);
+            } catch (e) {
+                localStorage.removeItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+            }
+        }
+    },
 
-    if (authFormBox) authFormBox.style.display = 'block';
-    if (userInfoBox) userInfoBox.style.display = 'none';
-    if (adminPanelSection) adminPanelSection.style.display = 'none';
-    if (teacherNavBtn) teacherNavBtn.style.display = 'none';
-}
+    initUIControls() {
+        // Кнопка входу / виходу
+        const loginBtn = document.getElementById('loginModalBtn');
+        const logoutBtn = document.getElementById('userLogoutBtn');
+        const tripleAuthBtn = document.getElementById('tripleAuthSubmitBtn');
 
-// ==========================================
-// 3. МЕТОДИ ВХОДУ ТА АДМІНІСТРУВАННЯ
-// ==========================================
+        if (loginBtn) loginBtn.addEventListener('click', () => UI.showModal('authModal'));
+        if (logoutBtn) logoutBtn.addEventListener('click', () => AuthModule.logout());
+        if (tripleAuthBtn) tripleAuthBtn.addEventListener('click', () => AuthModule.handleTripleAuth());
 
-async function handleEmailRegister() {
-    const email = document.getElementById('emailInput')?.value.trim();
-    const password = document.getElementById('passwordInput')?.value.trim();
-    if (!email || !password) return alert("Введіть Email та Пароль!");
+        // Вкладки каталогу
+        const catalogFilterBtns = document.querySelectorAll('.catalog-filter-btn');
+        catalogFilterBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                catalogFilterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.loadCatalog(btn.getAttribute('data-category'));
+            });
+        });
 
-    try {
-        await createUserWithEmailAndPassword(auth, email, password);
-        alert("✅ Акаунт успішно створено!");
-    } catch (e) {
-        alert("❌ Помилка реєстрації: " + e.message);
-    }
-}
+        // Контролери зуму картографічного полотна
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const resetViewBtn = document.getElementById('resetViewBtn');
 
-async function handleEmailLogin() {
-    const email = document.getElementById('emailInput')?.value.trim();
-    const password = document.getElementById('passwordInput')?.value.trim();
-    if (!email || !password) return alert("Введіть Email та Пароль!");
+        if (zoomInBtn) zoomInBtn.addEventListener('click', () => CanvasEngine.adjustZoom(1.2));
+        if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => CanvasEngine.adjustZoom(0.8));
+        if (resetViewBtn) resetViewBtn.addEventListener('click', () => CanvasEngine.resetView());
 
-    try {
-        await signInWithEmailAndPassword(auth, email, password);
-    } catch (e) {
-        alert("❌ Помилка входу: " + e.message);
-    }
-}
+        // Управління модальними вікнами
+        document.querySelectorAll('.close-modal-btn').forEach(btn => {
+            btn.addEventListener('click', () => UI.closeAllModals());
+        });
+    },
 
-async function handleGoogleLogin() {
-    try {
-        await signInWithPopup(auth, googleProvider);
-    } catch (e) {
-        alert("❌ Помилка входу через Google: " + e.message);
-    }
-}
+    initAudioSynthesizer() {
+        AudioEngine.init();
+    },
 
-async function handleLogout() {
-    await signOut(auth);
-    window.location.href = 'index.html';
-}
+    loadCatalog(category = 'all') {
+        const tests = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS) || '[]');
+        const catalogContainer = document.getElementById('testsCatalogGrid');
+        if (!catalogContainer) return;
 
-function loadAdminUserManagement() {
-    const container = document.getElementById('adminUsersList');
-    if (!container) return;
+        const filtered = category === 'all' 
+            ? tests 
+            : tests.filter(t => t.category === category);
 
-    const usersRef = ref(db, 'users');
-    onValue(usersRef, (snapshot) => {
-        if (!snapshot.exists()) {
-            container.innerHTML = '<p>Користувачів немає.</p>';
+        if (filtered.length === 0) {
+            catalogContainer.innerHTML = `
+                <div class="empty-catalog-msg" style="grid-column: 1/-1; text-align: center; color: var(--text-sub); padding: 40px;">
+                    <i class="fa-solid fa-map-location-dot" style="font-size: 3rem; margin-bottom: 10px;"></i>
+                    <p>У цій категорії поки немає доступних тестів.</p>
+                </div>`;
             return;
         }
 
-        const users = snapshot.val();
-        let html = `
-            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
-                <thead>
-                    <tr style="background:#edf2f7; text-align:left;">
-                        <th style="padding:8px; border:1px solid #cbd5e0;">Email</th>
-                        <th style="padding:8px; border:1px solid #cbd5e0;">Поточна роль</th>
-                        <th style="padding:8px; border:1px solid #cbd5e0;">Дії (Зміна ролі)</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        Object.keys(users).forEach(uid => {
-            const u = users[uid];
-            const isOwnerAcc = isOwnerEmail(u.email);
-
-            html += `
-                <tr>
-                    <td style="padding:8px; border:1px solid #cbd5e0;">${u.email}</td>
-                    <td style="padding:8px; border:1px solid #cbd5e0;"><b>${u.role || 'student'}</b></td>
-                    <td style="padding:8px; border:1px solid #cbd5e0;">
-                        ${isOwnerAcc ? '<i>Власник (Головний Адмін)</i>' : `
-                            <button onclick="setUserRole('${uid}', 'teacher')" class="btn primary-btn" style="padding:4px 8px; font-size:0.8rem;">Зробити Вчителем</button>
-                            <button onclick="setUserRole('${uid}', 'student')" class="btn danger-btn" style="padding:4px 8px; font-size:0.8rem;">Зробити Учнем</button>
-                        `}
-                    </td>
-                </tr>
-            `;
-        });
-
-        html += '</tbody></table>';
-        container.innerHTML = html;
-    });
-}
-
-async function setUserRole(uid, role) {
-    try {
-        await update(ref(db, `users/${uid}`), { role: role });
-        alert(`✅ Роль успішно змінено на ${role}`);
-    } catch (e) {
-        alert("Помилка зміни ролі: " + e.message);
-    }
-}
-
-// ==========================================
-// 4. ІНІЦІАЛІЗАЦІЯ МОДУЛІВ ДОДАТКУ
-// ==========================================
-
-document.addEventListener('DOMContentLoaded', () => {
-    initTeacherPanel();
-    initStudentPanel();
-    initAdminPanel();
-    setupGlobalResizeListeners();
-});
-
-function setupGlobalResizeListeners() {
-    window.addEventListener('resize', () => {
-        if (document.getElementById('teacherCanvas')) redrawTeacherCanvas();
-        if (document.getElementById('studentCanvas')) redrawStudentCanvas();
-    });
-}
-
-// ==========================================
-// 5. ТЕЛЕГРАМ ІНТЕГРАЦІЯ
-// ==========================================
-
-async function fetchMyChatId() {
-    const input = document.getElementById('teacherChatId');
-    const btn = document.getElementById('getChatIdBtn');
-    if (!input || !btn) return;
-
-    btn.innerText = "⏳ Перевірка...";
-
-    try {
-        const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates`);
-        const data = await response.json();
-
-        if (data.ok && data.result.length > 0) {
-            const lastUpdate = data.result[data.result.length - 1];
-            let chatId = null;
-
-            if (lastUpdate.message) {
-                chatId = lastUpdate.message.chat.id;
-            } else if (lastUpdate.my_chat_member) {
-                chatId = lastUpdate.my_chat_member.chat.id;
-            }
-
-            if (chatId) {
-                input.value = chatId;
-                alert(`✅ Ваш Chat ID успішно знайдено: ${chatId}`);
-            } else {
-                alert("💬 Будь ласка, відправте будь-яке повідомлення боту у Telegram та спробуйте знову!");
-            }
-        } else {
-            alert("⚠️ Не вдалося знайти нових повідомлень. Перейдіть у бот, натисніть START або напишіть йому!");
-        }
-    } catch (error) {
-        console.error("Помилка Telegram API:", error);
-        alert("Не вдалося автоматично отримати ID. Введіть його вручну.");
-    } finally {
-        btn.innerText = "📲 Отримати свій ID";
-    }
-}
-
-function sendTelegramNotification(chatId, messageText) {
-    if (!chatId) return;
-
-    const cleanChatId = chatId.toString().trim();
-    const payload = {
-        chat_id: cleanChatId,
-        text: messageText,
-        parse_mode: 'HTML'
-    };
-
-    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.ok) {
-            console.log("✅ Результати надіслано в Telegram!");
-        } else {
-            console.error("❌ Помилка Telegram:", data.description);
-        }
-    })
-    .catch(err => console.error("❌ Мережева помилка Telegram:", err));
-}
-
-// ==========================================
-// 6. ПАНЕЛЬ ВЧИТЕЛЯ (КОНСТРУКТОР ТЕСТІВ)
-// ==========================================
-
-function initTeacherPanel() {
-    const mapFileInput = document.getElementById('mapFileInput');
-    const mapUrlInput = document.getElementById('mapUrl');
-    const loadMapBtn = document.getElementById('loadMapBtn');
-    const teacherMapImage = document.getElementById('teacherMapImage');
-    const editorArea = document.getElementById('editorArea');
-    const taskTypeSelect = document.getElementById('taskType');
-    const addTaskBtn = document.getElementById('addTaskBtn');
-    const saveTestBtn = document.getElementById('saveTestBtn');
-    const clearShapeBtn = document.getElementById('clearCurrentShapeBtn');
-
-    if (!teacherMapImage) return;
-
-    if (mapFileInput) {
-        mapFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (evt) => loadTeacherMapImage(evt.target.result);
-                reader.readAsDataURL(file);
-            }
-        });
-    }
-
-    if (loadMapBtn && mapUrlInput) {
-        loadMapBtn.addEventListener('click', () => {
-            const url = mapUrlInput.value.trim();
-            if (url) loadTeacherMapImage(url);
-            else alert('Введіть коректне посилання на зображення!');
-        });
-    }
-
-    if (taskTypeSelect) {
-        taskTypeSelect.addEventListener('change', (e) => {
-            currentTaskType = e.target.value;
-            clearCurrentShape();
-        });
-    }
-
-    if (clearShapeBtn) clearShapeBtn.addEventListener('click', clearCurrentShape);
-    if (addTaskBtn) addTaskBtn.addEventListener('click', addNewTeacherTask);
-    if (saveTestBtn) saveTestBtn.addEventListener('click', saveTestAndGenerateCode);
-
-    renderTeacherHistoryList();
-}
-
-function loadTeacherMapImage(src) {
-    const teacherMapImage = document.getElementById('teacherMapImage');
-    const editorArea = document.getElementById('editorArea');
-
-    teacherMapImage.src = src;
-    currentTest.imageSrc = src;
-
-    teacherMapImage.onload = () => {
-        if (editorArea) editorArea.style.display = 'block';
-        setupTeacherCanvas();
-        clearCurrentShape();
-    };
-
-    teacherMapImage.onerror = () => alert('Помилка завантаження зображення!');
-}
-
-function setupTeacherCanvas() {
-    const canvas = document.getElementById('teacherCanvas');
-    const img = document.getElementById('teacherMapImage');
-    if (!canvas || !img) return;
-
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-
-    canvas.onmousedown = handleTeacherPointerDown;
-    canvas.onmousemove = handleTeacherPointerMove;
-    canvas.onmouseup = handleTeacherPointerUp;
-
-    canvas.ontouchstart = (e) => { handleTeacherPointerDown(e.touches[0]); e.preventDefault(); };
-    canvas.ontouchmove = (e) => { handleTeacherPointerMove(e.touches[0]); e.preventDefault(); };
-    canvas.ontouchend = (e) => { handleTeacherPointerUp(e); e.preventDefault(); };
-}
-
-function clearCurrentShape() {
-    currentStandardPoint = null;
-    multiMarkers = [];
-    currentPolyline = [];
-    donutOuterPolygon = [];
-    donutInnerPolygon = [];
-    currentDrawingMode = 'outer';
-    isTeacherDrawing = false;
-    redrawTeacherCanvas();
-}
-
-function handleTeacherPointerDown(e) {
-    const point = getNormalizedCoordinates(e, 'teacherMapImage');
-
-    if (currentTaskType === 'point' || currentTaskType === 'marker') {
-        currentStandardPoint = point;
-        redrawTeacherCanvas();
-    } else if (currentTaskType === 'multi-point' || currentTaskType === 'multi-marker') {
-        multiMarkers.push(point);
-        redrawTeacherCanvas();
-    } else if (currentTaskType === 'line') {
-        currentPolyline.push(point);
-        redrawTeacherCanvas();
-    } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
-        isTeacherDrawing = true;
-        if (currentDrawingMode === 'outer') donutOuterPolygon.push(point);
-        else donutInnerPolygon.push(point);
-        redrawTeacherCanvas();
-    }
-}
-
-function handleTeacherPointerMove(e) {
-    if (!isTeacherDrawing) return;
-    const point = getNormalizedCoordinates(e, 'teacherMapImage');
-
-    if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
-        if (currentDrawingMode === 'outer') donutOuterPolygon.push(point);
-        else donutInnerPolygon.push(point);
-        redrawTeacherCanvas();
-    }
-}
-
-function handleTeacherPointerUp() {
-    isTeacherDrawing = false;
-}
-
-function redrawTeacherCanvas() {
-    const canvas = document.getElementById('teacherCanvas');
-    const img = document.getElementById('teacherMapImage');
-    if (!canvas || !img) return;
-
-    const ctx = canvas.getContext('2d');
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const w = canvas.width;
-    const h = canvas.height;
-
-    if (currentStandardPoint) drawPointOnContext(ctx, currentStandardPoint, w, h, '#e53e3e', 'Еталон');
-    if (multiMarkers.length > 0) multiMarkers.forEach((pt, i) => drawPointOnContext(ctx, pt, w, h, '#3182ce', (i + 1).toString()));
-    if (currentPolyline.length > 0) drawPolylineOnContext(ctx, currentPolyline, w, h, '#d69e2e');
-    if (donutOuterPolygon.length > 1) drawPolygonOnContext(ctx, donutOuterPolygon, w, h, '#38a169', 'rgba(56, 161, 105, 0.3)');
-    if (donutInnerPolygon.length > 1) drawPolygonOnContext(ctx, donutInnerPolygon, w, h, '#e53e3e', 'rgba(229, 62, 62, 0.4)');
-}
-
-function addNewTeacherTask() {
-    const instructionInput = document.getElementById('taskInstruction');
-    const pointsInput = document.getElementById('taskPoints');
-
-    const instruction = instructionInput ? instructionInput.value.trim() : '';
-    const points = pointsInput ? parseInt(pointsInput.value) || 2 : 2;
-
-    if (!instruction) return alert('Введіть інструкцію завдання!');
-
-    let taskData = { id: Date.now(), type: currentTaskType, instruction, points };
-
-    if (currentTaskType === 'point' || currentTaskType === 'marker') {
-        if (!currentStandardPoint) return alert('Позначте еталонну точку на карті!');
-        taskData.standardPoint = currentStandardPoint;
-    } else if (currentTaskType === 'multi-point' || currentTaskType === 'multi-marker') {
-        if (multiMarkers.length < 2) return alert('Поставте хоча б 2 мітки!');
-        taskData.multiPoints = [...multiMarkers];
-    } else if (currentTaskType === 'line') {
-        if (currentPolyline.length < 2) return alert('Намалюйте лінію (мін. 2 точки)!');
-        taskData.polyline = [...currentPolyline];
-    } else if (currentTaskType === 'polygon' || currentTaskType === 'donut') {
-        if (donutOuterPolygon.length < 3) return alert('Намалюйте область (мін. 3 точки)!');
-        taskData.polygon = { outer: [...donutOuterPolygon], inner: [...donutInnerPolygon] };
-    }
-
-    currentTest.tasks.push(taskData);
-    instructionInput.value = '';
-    clearCurrentShape();
-    renderTeacherTasksList();
-    alert('✅ Завдання додано!');
-}
-
-function renderTeacherTasksList() {
-    const container = document.getElementById('tasksList');
-    if (!container) return;
-
-    if (currentTest.tasks.length === 0) {
-        container.innerHTML = '<p style="color:#a0aec0; font-style:italic;">Завдань поки немає.</p>';
-        return;
-    }
-
-    container.innerHTML = currentTest.tasks.map((task, idx) => `
-        <div class="task-item">
-            <div>
-                <b>${idx + 1}. ${task.instruction}</b>
-                <div style="font-size:0.8rem; color:#718096;">
-                    Тип: ${getTaskTypeName(task.type)} | Макс. бал: ${task.points}
+        catalogContainer.innerHTML = filtered.map(test => `
+            <div class="test-card">
+                <div class="test-card-banner" style="background-image: url('${test.mapUrl}'); background-size: cover; height: 140px; border-radius: 8px 8px 0 0; position: relative;">
+                    <span class="test-badge">${test.category || 'Географія'}</span>
+                </div>
+                <div class="test-card-body" style="padding: 15px;">
+                    <h3 style="margin: 0 0 8px 0;">${Utils.escapeHtml(test.title)}</h3>
+                    <p style="color: var(--text-sub); font-size: 0.85rem; margin-bottom: 15px;">
+                        Кількість питань: ${test.questions ? test.questions.length : 0} | Областей: ${test.shapes ? test.shapes.length : 0}
+                    </p>
+                    <button onclick="QuizEngine.startTest(${test.id})" class="btn-primary" style="width: 100%;">
+                        <i class="fa-solid fa-play"></i> Розпочати тест
+                    </button>
                 </div>
             </div>
-            <button onclick="removeTeacherTask(${idx})" class="btn danger-btn" style="padding: 4px 10px; font-size: 0.8rem;">Видалити</button>
-        </div>
-    `).join('');
-}
+        `).join('');
+    },
 
-function getTaskTypeName(type) {
-    switch (type) {
-        case 'point': case 'marker': return 'Мітка';
-        case 'multi-point': case 'multi-marker': return 'Кілька міток';
-        case 'line': return 'Лінія/Маршрут';
-        case 'polygon': case 'donut': return 'Область/Полігон';
-        default: return 'Елемент';
-    }
-}
+    updateUserInterface() {
+        const userNavInfo = document.getElementById('userNavInfo');
+        const adminPanelBtn = document.getElementById('adminPanelNavBtn');
 
-function removeTeacherTask(index) {
-    currentTest.tasks.splice(index, 1);
-    renderTeacherTasksList();
-}
+        if (IntermapState.currentUser) {
+            if (userNavInfo) {
+                userNavInfo.innerHTML = `
+                    <span class="user-email-tag"><i class="fa-solid fa-user-circle"></i> ${Utils.escapeHtml(IntermapState.currentUser.email)}</span>
+                    <button id="userLogoutBtn" class="btn-secondary-sm"><i class="fa-solid fa-right-from-bracket"></i></button>
+                `;
+                document.getElementById('userLogoutBtn')?.addEventListener('click', () => AuthModule.logout());
+            }
 
-async function saveTestAndGenerateCode() {
-    const titleInput = document.getElementById('testTitle');
-    const chatIdInput = document.getElementById('teacherChatId');
-
-    const title = titleInput ? titleInput.value.trim() : '';
-    const telegramChatId = chatIdInput ? chatIdInput.value.trim() : '';
-
-    if (!title) return alert('Укажіть назву тесту!');
-    if (currentTest.tasks.length === 0) return alert('Створіть хоча б одне завдання!');
-
-    const code = generateUnique10Code();
-    currentTest.id = code;
-    currentTest.title = title;
-    currentTest.telegramChatId = telegramChatId;
-    currentTest.createdAt = new Date().toLocaleString('uk-UA');
-    currentTest.authorUid = currentUser ? currentUser.uid : 'anonymous';
-
-    try {
-        await set(ref(db, 'tests/' + code), currentTest);
-
-        const codeSec = document.getElementById('generatedCodeSection');
-        const codeDisplay = document.getElementById('testCodeDisplay');
-
-        if (codeDisplay) codeDisplay.innerText = code;
-        if (codeSec) codeSec.style.display = 'block';
-
-        let history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
-        history[code] = currentTest;
-        localStorage.setItem('teacherHistory', JSON.stringify(history));
-
-        renderTeacherHistoryList();
-        alert(`🎉 Тест успішно створено! Код: ${code}`);
-    } catch (e) {
-        console.error("Помилка збереження тесту:", e);
-        alert("Не вдалося зберегти тест в БД: " + e.message);
-    }
-}
-
-function renderTeacherHistoryList() {
-    const historyContainer = document.getElementById('teacherHistoryList');
-    if (!historyContainer) return;
-
-    const history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
-    const keys = Object.keys(history);
-
-    if (keys.length === 0) {
-        historyContainer.innerHTML = '<p style="color:#a0aec0; font-style:italic;">Створених тестів не знайдено.</p>';
-        return;
-    }
-
-    historyContainer.innerHTML = keys.map(code => `
-        <div class="task-item">
-            <div>
-                <b style="color:#3182ce;">${code}</b> — ${history[code].title}
-            </div>
-            <div style="display:flex; gap:6px;">
-                <button onclick="copyCodeLink('${code}')" class="btn primary-btn" style="padding:4px 8px; font-size:0.8rem;">Копіювати</button>
-                <button onclick="deleteTest('${code}')" class="btn danger-btn" style="padding:4px 8px; font-size:0.8rem;">Видалити</button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function copyCodeLink(code) {
-    const url = `${window.location.origin}${window.location.pathname.replace('teacher.html', 'student.html')}?code=${code}`;
-    navigator.clipboard.writeText(url);
-    alert('Посилання на тест скопійовано у буфер обміну!');
-}
-
-async function deleteTest(code) {
-    if (!confirm(`Ви впевнені, що хочете видалити тест ${code}?`)) return;
-
-    let history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
-    delete history[code];
-    localStorage.setItem('teacherHistory', JSON.stringify(history));
-
-    try {
-        await remove(ref(db, 'tests/' + code));
-        await remove(ref(db, 'results/' + code));
-    } catch (e) {
-        console.error("Помилка видалення тесту з Firebase:", e);
-    }
-
-    renderTeacherHistoryList();
-    alert('Тест успішно видалено!');
-}
-
-// ==========================================
-// 7. ПАНЕЛЬ УЧНЯ (ПРОХОДЖЕННЯ ТЕСТУ)
-// ==========================================
-
-function initStudentPanel() {
-    const loadTestBtn = document.getElementById('loadTestBtn');
-    const submitWorkBtn = document.getElementById('submitWorkBtn');
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const codeFromUrl = urlParams.get('code');
-
-    if (codeFromUrl) loadTestByCode(codeFromUrl);
-
-    if (loadTestBtn) {
-        loadTestBtn.addEventListener('click', () => {
-            const inputCode = document.getElementById('studentCodeInput').value.trim();
-            if (inputCode) loadTestByCode(inputCode);
-            else alert('Введіть 10-значний код тесту!');
-        });
-    }
-
-    if (submitWorkBtn) submitWorkBtn.addEventListener('click', checkStudentWork);
-}
-
-async function loadTestByCode(code) {
-    let test = await loadTestFromFirebase(code);
-
-    if (!test) {
-        const history = JSON.parse(localStorage.getItem('teacherHistory') || '{}');
-        test = history[code];
-    }
-
-    if (!test) return alert('❌ Тест із таким кодом не знайдено!');
-
-    loadedTest = test;
-    loadedTestCode = code;
-
-    const loaderSec = document.getElementById('codeLoaderSection');
-    const testArea = document.getElementById('testArea');
-
-    if (loaderSec) loaderSec.style.display = 'none';
-    if (testArea) testArea.style.display = 'block';
-
-    const displayTitle = document.getElementById('displayTestTitle');
-    if (displayTitle) displayTitle.innerText = loadedTest.title;
-
-    const studentMapImg = document.getElementById('studentMapImage');
-    if (studentMapImg) {
-        studentMapImg.src = loadedTest.imageSrc;
-        studentMapImg.onload = () => {
-            setupStudentCanvas();
-            renderStudentTasks();
-        };
-    }
-}
-
-function setupStudentCanvas() {
-    const canvas = document.getElementById('studentCanvas');
-    const img = document.getElementById('studentMapImage');
-    if (!canvas || !img) return;
-
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-
-    canvas.onmousedown = handleStudentPointerDown;
-    canvas.onmousemove = handleStudentPointerMove;
-    canvas.onmouseup = handleStudentPointerUp;
-
-    canvas.ontouchstart = (e) => { handleStudentPointerDown(e.touches[0]); e.preventDefault(); };
-    canvas.ontouchmove = (e) => { handleStudentPointerMove(e.touches[0]); e.preventDefault(); };
-    canvas.ontouchend = (e) => { handleStudentPointerUp(e); e.preventDefault(); };
-}
-
-function handleStudentPointerDown(e) {
-    if (activeTaskIndex === null) return alert('Оберіть завдання зі списку нижче!');
-
-    const task = loadedTest.tasks[activeTaskIndex];
-    const pt = getNormalizedCoordinates(e, 'studentMapImage');
-
-    if (task.type === 'point' || task.type === 'marker') {
-        studentAnswers[activeTaskIndex] = pt;
-        redrawStudentCanvas();
-        renderStudentTasks();
-    } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
-        if (!Array.isArray(studentAnswers[activeTaskIndex])) {
-            studentAnswers[activeTaskIndex] = [];
-        }
-        if (studentAnswers[activeTaskIndex].length < (task.multiPoints ? task.multiPoints.length : 5)) {
-            studentAnswers[activeTaskIndex].push(pt);
-            redrawStudentCanvas();
-            renderStudentTasks();
+            if (adminPanelBtn) {
+                if (IntermapState.currentUser.role === 'admin' || INTERMAP_CONFIG.OWNER_EMAILS.includes(IntermapState.currentUser.email)) {
+                    adminPanelBtn.style.display = 'inline-flex';
+                } else {
+                    adminPanelBtn.style.display = 'none';
+                }
+            }
         } else {
-            alert('Ви вже поставили максимальну кількість міток для цього завдання!');
+            if (userNavInfo) {
+                userNavInfo.innerHTML = `
+                    <button id="loginModalBtn" class="btn-primary-sm">
+                        <i class="fa-solid fa-lock"></i> Вхід для вчителя / Адміна
+                    </button>
+                `;
+                document.getElementById('loginModalBtn')?.addEventListener('click', () => UI.showModal('authModal'));
+            }
+            if (adminPanelBtn) adminPanelBtn.style.display = 'none';
         }
-    } else if (task.type === 'line') {
-        isStudentDrawing = true;
-        currentStudentLine = [pt];
-    } else if (task.type === 'polygon' || task.type === 'donut') {
-        isStudentDrawing = true;
-        currentStudentPolygon = [pt];
+
+        UI.renderLeaderboard();
+        UI.renderUserHistory();
     }
-}
+};
 
-function handleStudentPointerMove(e) {
-    if (!isStudentDrawing || activeTaskIndex === null) return;
+// ============================================================================
+// 3. АВТОРИЗАЦІЯ ТА ПОТРІЙНА ПЕРЕВІРКА (TRIPLE AUTH)
+// ============================================================================
 
-    const task = loadedTest.tasks[activeTaskIndex];
-    const pt = getNormalizedCoordinates(e, 'studentMapImage');
+const AuthModule = {
+    login(email, role = 'student') {
+        const user = {
+            email: email,
+            role: role,
+            loggedInAt: new Date().toISOString()
+        };
 
-    if (task.type === 'line') {
-        currentStudentLine.push(pt);
+        IntermapState.currentUser = user;
+        localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(user));
+
+        if (INTERMAP_CONFIG.OWNER_EMAILS.includes(email)) {
+            localStorage.setItem('isOwnerAuthorized', 'true');
+            localStorage.setItem('userRole', 'admin');
+            localStorage.setItem('userEmail', email);
+        } else {
+            localStorage.setItem('userRole', role);
+            localStorage.setItem('userEmail', email);
+        }
+
+        UI.closeAllModals();
+        IntermapEngine.updateUserInterface();
+        UI.showToast(`Ласкаво просимо, ${email}!`, 'success');
+        AudioEngine.play('success');
+    },
+
+    logout() {
+        IntermapState.currentUser = null;
+        localStorage.removeItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
+        localStorage.removeItem('isOwnerAuthorized');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userEmail');
+
+        IntermapEngine.updateUserInterface();
+        UI.showToast('Ви вийшли з акаунта', 'info');
+    },
+
+    handleTripleAuth() {
+        const emailInput = document.getElementById('authEmailInput')?.value.trim();
+        const tgInput = document.getElementById('authTgInput')?.value.trim();
+        const secretInput = document.getElementById('authSecretInput')?.value.trim();
+
+        if (!emailInput) {
+            UI.showToast('Введіть ваш Email', 'error');
+            return;
+        }
+
+        // Перевірка прав власника за даними
+        const isOwner = INTERMAP_CONFIG.OWNER_EMAILS.includes(emailInput);
+        const isTgValid = tgInput === INTERMAP_CONFIG.TRIPLE_AUTH_SECRETS.TELEGRAM_USERNAME;
+        const isSecretValid = secretInput === INTERMAP_CONFIG.TRIPLE_AUTH_SECRETS.GOOGLE_KEY;
+
+        if (isOwner) {
+            if (isTgValid && isSecretValid) {
+                localStorage.setItem('isOwnerAuthorized', 'true');
+                localStorage.setItem('userRole', 'admin');
+                this.login(emailInput, 'admin');
+                UI.showToast('Потрійну авторизацію пройдено! Доступ до адмін-панелі відкрито.', 'success');
+                setTimeout(() => { window.location.href = 'admin.html'; }, 1000);
+            } else {
+                UI.showToast('Невірний Telegram Username або Google Secret Key!', 'error');
+                AudioEngine.play('error');
+            }
+        } else {
+            // Звичайний вхід студента
+            this.login(emailInput, 'student');
+        }
+    }
+};
+
+// ============================================================================
+// 4. CANVAS ENGINE (ВІДМАЛЬОВКА, HIT-TESTING, RAY-CASTING)
+// ============================================================================
+
+const CanvasEngine = {
+    initCanvasEngine() {
+        const canvas = document.getElementById('studentCanvas');
+        if (!canvas) return;
+
+        IntermapState.studentCanvas.element = canvas;
+        IntermapState.studentCanvas.ctx = canvas.getContext('2d');
+
+        // Додавання обробників подій миші та тач-скріна
+        canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        canvas.addEventListener('mouseup', () => this.handleMouseUp());
+        canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+        canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+
+        window.addEventListener('resize', () => this.resizeCanvasToContainer());
+    },
+
+    resizeCanvasToContainer() {
+        const canvas = IntermapState.studentCanvas.element;
+        if (!canvas || !canvas.parentElement) return;
+
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width || 800;
+        canvas.height = rect.height || 500;
+
         redrawStudentCanvas();
-    } else if (task.type === 'polygon' || task.type === 'donut') {
-        currentStudentPolygon.push(pt);
+    },
+
+    loadMapImage(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.src = url;
+            img.onload = () => {
+                IntermapState.studentCanvas.image = img;
+                IntermapState.studentCanvas.isLoaded = true;
+                this.resetView();
+                resolve(img);
+            };
+            img.onerror = (err) => {
+                IntermapState.studentCanvas.isLoaded = false;
+                reject(err);
+            };
+        });
+    },
+
+    resetView() {
+        const c = IntermapState.studentCanvas;
+        c.zoom = 1;
+        c.panX = 0;
+        c.panY = 0;
+        redrawStudentCanvas();
+    },
+
+    adjustZoom(factor) {
+        const c = IntermapState.studentCanvas;
+        const newZoom = c.zoom * factor;
+        if (newZoom >= 0.6 && newZoom <= 4.0) {
+            c.zoom = newZoom;
+            redrawStudentCanvas();
+        }
+    },
+
+    getTransformedCoords(e) {
+        const canvas = IntermapState.studentCanvas.element;
+        const rect = canvas.getBoundingClientRect();
+        const rawX = e.clientX - rect.left;
+        const rawY = e.clientY - rect.top;
+
+        const c = IntermapState.studentCanvas;
+        return {
+            x: (rawX - c.panX) / c.zoom,
+            y: (rawY - c.panY) / c.zoom
+        };
+    },
+
+    handleMouseDown(e) {
+        if (e.button === 1 || e.shiftKey) { // Середня кнопка миші або Shift+ЛКМ для панорамування
+            const c = IntermapState.studentCanvas;
+            c.isPanning = true;
+            c.startPanX = e.clientX - c.panX;
+            c.startPanY = e.clientY - c.panY;
+        }
+    },
+
+    handleMouseMove(e) {
+        const c = IntermapState.studentCanvas;
+        if (c.isPanning) {
+            c.panX = e.clientX - c.startPanX;
+            c.panY = e.clientY - c.startPanY;
+            redrawStudentCanvas();
+            return;
+        }
+
+        // Перевірка наведення курсора на області (Hover hit-testing)
+        const coords = this.getTransformedCoords(e);
+        const test = IntermapState.activeTest;
+        if (!test || !test.shapes) return;
+
+        let foundShape = null;
+        for (let shape of test.shapes) {
+            if (Geometry.isPointInShape(coords, shape)) {
+                foundShape = shape;
+                break;
+            }
+        }
+
+        if (c.hoveredShape !== foundShape) {
+            c.hoveredShape = foundShape;
+            c.element.style.cursor = foundShape ? 'pointer' : 'crosshair';
+            redrawStudentCanvas();
+        }
+    },
+
+    handleMouseUp() {
+        IntermapState.studentCanvas.isPanning = false;
+    },
+
+    handleWheel(e) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        this.adjustZoom(factor);
+    },
+
+    handleCanvasClick(e) {
+        const c = IntermapState.studentCanvas;
+        if (c.isPanning) return;
+
+        const coords = this.getTransformedCoords(e);
+        const test = IntermapState.activeTest;
+        if (!test) return;
+
+        // Визначаємо, в яку фігуру влучив користувач
+        let clickedShape = null;
+        if (test.shapes) {
+            for (let shape of test.shapes) {
+                if (Geometry.isPointInShape(coords, shape)) {
+                    clickedShape = shape;
+                    break;
+                }
+            }
+        }
+
+        // Зберігаємо візуальну точку кліку
+        c.clicksHistory.push({
+            x: coords.x,
+            y: coords.y,
+            isCorrect: clickedShape ? true : false
+        });
+
+        // Передаємо відповідь у QuizEngine
+        QuizEngine.processStudentAnswer(clickedShape, coords);
         redrawStudentCanvas();
     }
-}
+};
 
-function handleStudentPointerUp() {
-    if (!isStudentDrawing || activeTaskIndex === null) return;
-    isStudentDrawing = false;
-
-    const task = loadedTest.tasks[activeTaskIndex];
-
-    if (task.type === 'line') {
-        if (currentStudentLine.length > 1) {
-            studentAnswers[activeTaskIndex] = [...currentStudentLine];
-        }
-        currentStudentLine = [];
-    } else if (task.type === 'polygon' || task.type === 'donut') {
-        if (currentStudentPolygon.length > 2) {
-            studentAnswers[activeTaskIndex] = [...currentStudentPolygon];
-        }
-        currentStudentPolygon = [];
-    }
-
-    redrawStudentCanvas();
-    renderStudentTasks();
-}
-
+/**
+ * Головна функція перемалювання Canvas (Завершено та відновлено)
+ */
 function redrawStudentCanvas() {
     const canvas = document.getElementById('studentCanvas');
-    const img = document.getElementById('studentMapImage');
-    if (!canvas || !img) return;
+    const c = IntermapState.studentCanvas;
+    if (!canvas || !c.ctx) return;
 
-    const ctx = canvas.getContext('2d');
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-
+    const ctx = c.ctx;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const w = canvas.width;
-    const h = canvas.height;
 
-    Object.keys(studentAnswers).forEach(taskIdx => {
-        const ans = studentAnswers[taskIdx];
-        const task = loadedTest.tasks[taskIdx];
-        const label = `№${parseInt(taskIdx) + 1}`;
+    ctx.save();
+    ctx.translate(c.panX, c.panY);
+    ctx.scale(c.zoom, c.zoom);
 
-        if (task.type === 'point' || task.type === 'marker') {
-            drawPointOnContext(ctx, ans, w, h, '#3182ce', label);
-        } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
-            if (Array.isArray(ans)) {
-                ans.forEach((pt, i) => drawPointOnContext(ctx, pt, w, h, '#3182ce', `${label}.${i+1}`));
+    // 1. Відмальовка фонової карти
+    if (c.image && c.isLoaded) {
+        ctx.drawImage(c.image, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '16px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.fillText('Завантаження інтерактивної карти...', canvas.width / 2, canvas.height / 2);
+    }
+
+    // 2. Відмальовка інтерактивних областей (Shapes)
+    const test = IntermapState.activeTest;
+    if (test && test.shapes) {
+        test.shapes.forEach(shape => {
+            const isHovered = c.hoveredShape && c.hoveredShape.id === shape.id;
+            const isSelected = c.selectedShape && c.selectedShape.id === shape.id;
+
+            ctx.beginPath();
+            ctx.lineWidth = (isHovered || isSelected ? 3 : 1.5) / c.zoom;
+            ctx.strokeStyle = isSelected ? '#10b981' : (isHovered ? '#3b82f6' : (shape.color || '#64748b'));
+            ctx.fillStyle = isSelected 
+                ? 'rgba(16, 185, 129, 0.4)' 
+                : (isHovered ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.1)');
+
+            if (shape.type === 'point' && shape.points[0]) {
+                const pt = shape.points[0];
+                const radius = (isHovered ? 10 : 7) / c.zoom;
+                ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else if (shape.type === 'polygon' && shape.points && shape.points.length > 0) {
+                shape.points.forEach((pt, idx) => {
+                    if (idx === 0) ctx.moveTo(pt.x, pt.y);
+                    else ctx.lineTo(pt.x, pt.y);
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
             }
-        } else if (task.type === 'line') {
-            if (Array.isArray(ans)) drawPolylineOnContext(ctx, ans, w, h, '#3182ce');
-        } else if (task.type === 'polygon' || task.type === 'donut') {
-            if (Array.isArray(ans)) drawPolygonOnContext(ctx, ans, w, h, '#3182ce', 'rgba(49, 130, 206, 0.3)');
-        }
+        });
+    }
+
+    // 3. Відмальовка точок кліків учня
+    c.clicksHistory.forEach(click => {
+        ctx.beginPath();
+        ctx.arc(click.x, click.y, 5 / c.zoom, 0, Math.PI * 2);
+        ctx.fillStyle = click.isCorrect ? '#10b981' : '#ef4444';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5 / c.zoom;
+        ctx.stroke();
     });
 
-    if (isStudentDrawing) {
-        if (currentStudentLine.length > 0) drawPolylineOnContext(ctx, currentStudentLine, w, h, '#3182ce');
-        if (currentStudentPolygon.length > 0) drawPolygonOnContext(ctx, currentStudentPolygon, w, h, '#3182ce', 'rgba(49, 130, 206, 0.2)');
-    }
+    ctx.restore();
 }
 
-function renderStudentTasks() {
-    const container = document.getElementById('studentTasksContainer');
-    if (!container || !loadedTest) return;
+// ============================================================================
+// 5. ГЕОМЕТРИЧНИЙ РУШІЙ (RAY-CASTING POINT-IN-POLYGON)
+// ============================================================================
 
-    container.innerHTML = loadedTest.tasks.map((task, idx) => {
-        const ans = studentAnswers[idx];
-        const isCompleted = ans !== undefined && ans !== null && (!Array.isArray(ans) || ans.length > 0);
-        const isActive = activeTaskIndex === idx;
+const Geometry = {
+    isPointInShape(point, shape) {
+        if (!shape || !shape.points) return false;
 
-        let className = 'student-task-card';
-        if (isActive) className += ' active-task';
-        if (isCompleted) className += ' completed-task';
-
-        return `
-            <div class="${className}" onclick="selectTaskForStudent(${idx})">
-                <b>Завдання ${idx + 1}: ${task.instruction}</b>
-                <span style="float: right; font-weight: bold;">
-                    ${isCompleted ? '✅ Виконано' : '⏳ Очікує'}
-                </span>
-            </div>
-        `;
-    }).join('');
-}
-
-function selectTaskForStudent(idx) {
-    activeTaskIndex = idx;
-    const task = loadedTest.tasks[idx];
-    const instrBox = document.getElementById('studentInstruction');
-
-    if (instrBox) {
-        instrBox.innerHTML = `👉 <b>Завдання ${idx + 1}:</b> ${task.instruction}`;
-    }
-
-    renderStudentTasks();
-}
-
-// ==========================================
-// 8. ПЕРЕВІРКА ВІДПОВІДЕЙ ТА МАТЕМАТИКА
-// ==========================================
-
-async function checkStudentWork() {
-    const nameInput = document.getElementById('studentName');
-    const classInput = document.getElementById('studentClass');
-
-    const name = nameInput ? nameInput.value.trim() : '';
-    const studentClass = classInput ? classInput.value.trim() : '';
-
-    if (!name) return alert("Введіть своє Ім'я та Прізвище!");
-
-    let earnedPoints = 0;
-    let maxPoints = 0;
-    let reportText = `Звіт виконання тесту: "${loadedTest.title}"\nУчень: ${name} (${studentClass || 'Без класу'})\n\n`;
-
-    loadedTest.tasks.forEach((task, idx) => {
-        maxPoints += task.points;
-        const ans = studentAnswers[idx];
-        let isCorrect = false;
-
-        if (ans) {
-            if (task.type === 'point' || task.type === 'marker') {
-                const dist = getDistance(ans, task.standardPoint);
-                isCorrect = dist <= 4.0;
-            } else if (task.type === 'multi-point' || task.type === 'multi-marker') {
-                if (Array.isArray(ans) && ans.length === task.multiPoints.length) {
-                    let matches = 0;
-                    task.multiPoints.forEach(targetPt => {
-                        const hasMatch = ans.some(stPt => getDistance(stPt, targetPt) <= 4.5);
-                        if (hasMatch) matches++;
-                    });
-                    isCorrect = matches === task.multiPoints.length;
-                }
-            } else if (task.type === 'line') {
-                isCorrect = checkLineMatch(ans, task.polyline);
-            } else if (task.type === 'polygon' || task.type === 'donut') {
-                isCorrect = checkPolygonMatch(ans, task.polygon);
-            }
+        if (shape.type === 'point') {
+            const target = shape.points[0];
+            if (!target) return false;
+            const dist = Math.hypot(point.x - target.x, point.y - target.y);
+            return dist <= 15; // Радіус кліку для точки
         }
+
+        if (shape.type === 'polygon') {
+            return this.rayCastIntersect(point, shape.points);
+        }
+
+        return false;
+    },
+
+    /**
+     * Алгоритм Ray-Casting для виявлення точок всередині довільного багатокутника
+     */
+    rayCastIntersect(point, vs) {
+        const x = point.x, y = point.y;
+        let inside = false;
+
+        for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            const xi = vs[i].x, yi = vs[i].y;
+            const xj = vs[j].x, yj = vs[j].y;
+
+            const intersect = ((yi > y) !== (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+
+        return inside;
+    }
+};
+
+// ============================================================================
+// 6. КУРС ТА ТЕСТОВИЙ РУШІЙ (QUIZ ENGINE)
+// ============================================================================
+
+const QuizEngine = {
+    async startTest(testId) {
+        const tests = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS) || '[]');
+        const test = tests.find(t => t.id === testId);
+
+        if (!test) {
+            UI.showToast('Тест не знайдено в системі', 'error');
+            return;
+        }
+
+        IntermapState.activeTest = test;
+        IntermapState.currentQuestionIndex = 0;
+        IntermapState.userAnswers = [];
+        IntermapState.score = 0;
+        IntermapState.studentCanvas.clicksHistory = [];
+        IntermapState.totalTimeSpent = 0;
+
+        UI.showModal('quizModal');
+        CanvasEngine.resizeCanvasToContainer();
+
+        try {
+            await CanvasEngine.loadMapImage(test.mapUrl);
+        } catch (e) {
+            UI.showToast('Помилка завантаження картографічного фону', 'error');
+        }
+
+        this.startTimer();
+        this.renderCurrentQuestion();
+        AudioEngine.play('start');
+    },
+
+    startTimer() {
+        this.stopTimer();
+        IntermapState.timeRemaining = 300; // 5 хвилин на тест
+        this.updateTimerDisplay();
+
+        IntermapState.timerInterval = setInterval(() => {
+            IntermapState.timeRemaining--;
+            IntermapState.totalTimeSpent++;
+            this.updateTimerDisplay();
+
+            if (IntermapState.timeRemaining <= 0) {
+                this.stopTimer();
+                UI.showToast('Час вичерпано! Тест автоматично завершено.', 'info');
+                this.finishTest();
+            }
+        }, 1000);
+    },
+
+    stopTimer() {
+        if (IntermapState.timerInterval) {
+            clearInterval(IntermapState.timerInterval);
+            IntermapState.timerInterval = null;
+        }
+    },
+
+    updateTimerDisplay() {
+        const timerEl = document.getElementById('quizTimerDisplay');
+        if (!timerEl) return;
+
+        const minutes = Math.floor(IntermapState.timeRemaining / 60);
+        const seconds = IntermapState.timeRemaining % 60;
+        timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        if (IntermapState.timeRemaining < 30) {
+            timerEl.style.color = '#ef4444';
+        } else {
+            timerEl.style.color = '#3b82f6';
+        }
+    },
+
+    renderCurrentQuestion() {
+        const test = IntermapState.activeTest;
+        if (!test || !test.questions || test.questions.length === 0) {
+            UI.showToast('У цьому тесті немає налаштованих питань', 'error');
+            return;
+        }
+
+        const question = test.questions[IntermapState.currentQuestionIndex];
+        const questionTextEl = document.getElementById('currentQuestionText');
+        const questionCounterEl = document.getElementById('questionCounterDisplay');
+        const progressBar = document.getElementById('quizProgressBar');
+
+        if (questionTextEl) questionTextEl.textContent = question.text;
+        if (questionCounterEl) {
+            questionCounterEl.textContent = `Питання ${IntermapState.currentQuestionIndex + 1} з ${test.questions.length}`;
+        }
+
+        if (progressBar) {
+            const percent = ((IntermapState.currentQuestionIndex) / test.questions.length) * 100;
+            progressBar.style.width = `${percent}%`;
+        }
+    },
+
+    processStudentAnswer(clickedShape, coords) {
+        const test = IntermapState.activeTest;
+        if (!test) return;
+
+        const currentQuestion = test.questions[IntermapState.currentQuestionIndex];
+        const isCorrect = clickedShape && clickedShape.id === currentQuestion.targetShapeId;
 
         if (isCorrect) {
-            earnedPoints += task.points;
-            reportText += `Завдання ${idx + 1}: Правильно (+${task.points} б.)\n`;
+            IntermapState.score++;
+            AudioEngine.play('correct');
+            UI.showToast('Правильно!', 'success');
         } else {
-            reportText += `Завдання ${idx + 1}: Неправильно (0 б.)\n`;
+            AudioEngine.play('wrong');
+            UI.showToast('Невірно, спробуйте ще раз або переходьте далі', 'error');
         }
-    });
 
-    const resultsSection = document.getElementById('resultsSection');
-    const scoreSummary = document.getElementById('scoreSummary');
-    const detailedReport = document.getElementById('detailedReport');
-
-    if (resultsSection) resultsSection.style.display = 'block';
-    if (scoreSummary) scoreSummary.innerText = `Набрано балів: ${earnedPoints} з ${maxPoints}`;
-    if (detailedReport) detailedReport.innerText = reportText;
-
-    await sendStudentResultToFirebase(loadedTestCode, name, studentClass, earnedPoints, maxPoints, reportText);
-
-    if (loadedTest.telegramChatId) {
-        const msg = `📊 <b>Результат тесту!</b>\n\n` +
-                    `📖 <b>Тест:</b> ${loadedTest.title}\n` +
-                    `👤 <b>Учень:</b> ${name} (${studentClass})\n` +
-                    `🏆 <b>Оцінка:</b> ${earnedPoints} / ${maxPoints} балів\n\n` +
-                    `📝 <b>Деталі:</b>\n${reportText}`;
-        sendTelegramNotification(loadedTest.telegramChatId, msg);
-    }
-
-    if (resultsSection) resultsSection.scrollIntoView({ behavior: 'smooth' });
-}
-
-function getDistance(p1, p2) {
-    if (!p1 || !p2) return 999;
-    const dx = p1.x - p2.x;
-    const dy = p1.y - p2.y;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-function checkLineMatch(studentLine, teacherLine) {
-    if (!studentLine || !teacherLine || studentLine.length < 2) return false;
-    let matchedPoints = 0;
-
-    teacherLine.forEach(tPt => {
-        const close = studentLine.some(sPt => getDistance(sPt, tPt) <= 5.0);
-        if (close) matchedPoints++;
-    });
-
-    return (matchedPoints / teacherLine.length) >= 0.75;
-}
-
-function checkPolygonMatch(studentPoly, teacherPoly) {
-    if (!studentPoly || studentPoly.length < 3) return false;
-
-    const outer = teacherPoly.outer || teacherPoly;
-    const inner = teacherPoly.inner || [];
-
-    let insideValidArea = 0;
-
-    studentPoly.forEach(pt => {
-        const inOuter = isPointInPolygon(pt, outer);
-        const inInner = inner.length > 2 ? isPointInPolygon(pt, inner) : false;
-
-        if (inOuter && !inInner) insideValidArea++;
-    });
-
-    return (insideValidArea / studentPoly.length) >= 0.75;
-}
-
-function isPointInPolygon(pt, polygon) {
-    let x = pt.x, y = pt.y;
-    let inside = false;
-
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        let xi = polygon[i].x, yi = polygon[i].y;
-        let xj = polygon[j].x, yj = polygon[j].y;
-
-        let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-    }
-    return inside;
-}
-
-// ==========================================
-// 9. ОПТИМІЗОВАНИЙ РЕНДЕРУВАННЯ ГРАФІКИ
-// ==========================================
-
-function drawPointOnContext(ctx, point, w, h, color, label = '') {
-    if (!point) return;
-    const px = (point.x / 100) * w;
-    const py = (point.y / 100) * h;
-
-    ctx.beginPath();
-    ctx.arc(px, py, 7, 0, 2 * Math.PI);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    if (label) {
-        ctx.fillStyle = '#1e293b';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.fillText(label, px + 10, py + 4);
-    }
-}
-
-function drawPolylineOnContext(ctx, points, w, h, strokeColor) {
-    if (!points || points.length < 2) return;
-
-    ctx.beginPath();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 4;
-    ctx.moveTo((points[0].x / 100) * w, (points[0].y / 100) * h);
-
-    for (let i = 1; i < points.length; i++) {
-        ctx.lineTo((points[i].x / 100) * w, (points[i].y / 100) * h);
-    }
-    ctx.stroke();
-}
-
-function drawPolygonOnContext(ctx, polygon, w, h, strokeColor, fillColor) {
-    if (!polygon || polygon.length < 2) return;
-
-    ctx.beginPath();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 3;
-    ctx.moveTo((polygon[0].x / 100) * w, (polygon[0].y / 100) * h);
-
-    for (let i = 1; i < polygon.length; i++) {
-        ctx.lineTo((polygon[i].x / 100) * w, (polygon[i].y / 100) * h);
-    }
-
-    ctx.closePath();
-    ctx.stroke();
-
-    if (fillColor) {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
-    }
-}
-
-function getNormalizedCoordinates(e, imgId) {
-    const img = document.getElementById(imgId);
-    const rect = img.getBoundingClientRect();
-    const clientX = e.clientX !== undefined ? e.clientX : (e.touches ? e.touches[0].clientX : 0);
-    const clientY = e.clientY !== undefined ? e.clientY : (e.touches ? e.touches[0].clientY : 0);
-
-    return {
-        x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
-        y: Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100))
-    };
-}
-
-function generateUnique10Code() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let code = '';
-    for (let i = 0; i < 10; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-}
-
-// ==========================================
-// 10. ВЗАЄМОДІЯ З FIREBASE DATABASE
-// ==========================================
-
-async function loadTestFromFirebase(code) {
-    try {
-        const snapshot = await get(child(ref(db), `tests/${code}`));
-        if (snapshot.exists()) return snapshot.val();
-    } catch (e) {
-        console.error("Firebase Load Error:", e);
-    }
-    return null;
-}
-
-async function sendStudentResultToFirebase(code, name, studentClass, score, maxScore, report) {
-    try {
-        const resultsRef = ref(db, `results/${code}`);
-        const newRef = push(resultsRef);
-
-        await set(newRef, {
-            name: name,
-            studentClass: studentClass || '—',
-            score: score,
-            maxScore: maxScore,
-            report: report,
-            timestamp: new Date().toLocaleString('uk-UA'),
-            studentUid: currentUser ? currentUser.uid : 'guest'
+        IntermapState.userAnswers.push({
+            questionId: currentQuestion.id,
+            selectedShapeId: clickedShape ? clickedShape.id : null,
+            clickCoords: coords,
+            isCorrect: isCorrect
         });
-    } catch (e) {
-        console.error("Firebase Result Error:", e);
-    }
-}
 
-// ==========================================
-// 11. АДМІН-ПАНЕЛЬ ТА ЖУРНАЛ ОЦІНОК
-// ==========================================
-
-function initAdminPanel() {
-    const adminJournalContainer = document.getElementById('adminJournalContainer');
-    if (!adminJournalContainer) return;
-
-    loadAdminJournalData();
-}
-
-async function loadAdminJournalData() {
-    const journalContainer = document.getElementById('adminJournalContainer');
-    if (!journalContainer) return;
-
-    try {
-        const snapshot = await get(ref(db, 'results'));
-        if (snapshot.exists()) {
-            const data = snapshot.val();
-            let html = '';
-
-            Object.keys(data).forEach(testCode => {
-                html += `<h3 style="margin-top:20px; color:#3182ce;">Тест Код: ${testCode}</h3>`;
-                const resultsObj = data[testCode];
-
-                html += `
-                    <table style="width:100%; border-collapse:collapse; margin-top:8px;">
-                        <thead>
-                            <tr style="background:#edf2f7; text-align:left;">
-                                <th style="padding:8px; border:1px solid #cbd5e0;">Учень</th>
-                                <th style="padding:8px; border:1px solid #cbd5e0;">Клас</th>
-                                <th style="padding:8px; border:1px solid #cbd5e0;">Бал</th>
-                                <th style="padding:8px; border:1px solid #cbd5e0;">Дата</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                Object.keys(resultsObj).forEach(resId => {
-                    const r = resultsObj[resId];
-                    html += `
-                        <tr>
-                            <td style="padding:8px; border:1px solid #cbd5e0;">${r.name || r.studentName}</td>
-                            <td style="padding:8px; border:1px solid #cbd5e0;">${r.studentClass || '—'}</td>
-                            <td style="padding:8px; border:1px solid #cbd5e0; font-weight:bold; color:#2f855a;">${r.score} / ${r.maxScore}</td>
-                            <td style="padding:8px; border:1px solid #cbd5e0; font-size:0.85rem; color:#718096;">${r.timestamp}</td>
-                        </tr>
-                    `;
-                });
-
-                html += `</tbody></table>`;
-            });
-
-            journalContainer.innerHTML = html;
+        // Перехід до наступного питання або завершення
+        if (IntermapState.currentQuestionIndex + 1 < test.questions.length) {
+            IntermapState.currentQuestionIndex++;
+            setTimeout(() => this.renderCurrentQuestion(), 600);
         } else {
-            journalContainer.innerHTML = '<p style="color:#718096;">Журнал оцінок порожній.</p>';
+            setTimeout(() => this.finishTest(), 800);
         }
-    } catch (e) {
-        console.error("Journal Error:", e);
-        journalContainer.innerHTML = '<p style="color:#e53e3e;">Помилка завантаження журналу.</p>';
+    },
+
+    finishTest() {
+        this.stopTimer();
+        const test = IntermapState.activeTest;
+        const totalQuestions = test.questions ? test.questions.length : 1;
+        const finalScorePercentage = Math.round((IntermapState.score / totalQuestions) * 100);
+
+        // Збереження результату в локальну БД
+        const submission = {
+            id: Date.now(),
+            userEmail: IntermapState.currentUser ? IntermapState.currentUser.email : 'Гість (Анонім)',
+            testId: test.id,
+            testTitle: test.title,
+            score: finalScorePercentage,
+            correctCount: IntermapState.score,
+            totalCount: totalQuestions,
+            durationSpent: IntermapState.totalTimeSpent,
+            date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString()
+        };
+
+        const submissions = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS) || '[]');
+        submissions.push(submission);
+        localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS, JSON.stringify(submissions));
+
+        AudioEngine.play('finish');
+        UI.showResultsModal(submission);
+        IntermapEngine.updateUserInterface();
     }
-}
+};
+
+// ============================================================================
+// 7. СИНТЕЗАТОР ЗВУКОВИХ ЕФЕКТІВ (WEB AUDIO API)
+// ============================================================================
+
+const AudioEngine = {
+    ctx: null,
+
+    init() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+        } catch (e) {
+            console.warn('Web Audio API не підтримується у цьому браузері');
+        }
+    },
+
+    play(type) {
+        if (!IntermapState.soundEnabled || !this.ctx) return;
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        if (type === 'correct') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else if (type === 'wrong') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.setValueAtTime(110, now + 0.1);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        } else if (type === 'start') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(330, now);
+            osc.frequency.exponentialRampToValueAtTime(440, now + 0.2);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        } else if (type === 'finish') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(440, now);
+            osc.frequency.exponentialRampToValueAtTime(880, now + 0.4);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+    }
+};
+
+// ============================================================================
+// 8. ІНТЕРФЕЙС, МОДАЛЬНІ ВІКНА ТА СПОВІЩЕННЯ
+// ============================================================================
+
+const UI = {
+    showModal(modalId) {
+        this.closeAllModals();
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.classList.add('active');
+        }
+    },
+
+    closeAllModals() {
+        document.querySelectorAll('.modal-overlay').forEach(m => {
+            m.style.display = 'none';
+            m.classList.remove('active');
+        });
+    },
+
+    showResultsModal(sub) {
+        this.showModal('resultsModal');
+        const scoreEl = document.getElementById('resultScorePercent');
+        const textEl = document.getElementById('resultSummaryText');
+
+        if (scoreEl) scoreEl.textContent = `${sub.score}%`;
+        if (textEl) {
+            textEl.innerHTML = `
+                Ви успішно відповіли на <strong>${sub.correctCount}</strong> з <strong>${sub.totalCount}</strong> питань.<br>
+                Витрачений час: <strong>${sub.durationSpent} сек</strong>.
+            `;
+        }
+    },
+
+    renderLeaderboard() {
+        const tbody = document.getElementById('leaderboardTableBody');
+        if (!tbody) return;
+
+        const subs = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS) || '[]');
+        if (subs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-sub);">Записи відсутні</td></tr>`;
+            return;
+        }
+
+        // Сортування за найвищим балом
+        const sorted = [...subs].sort((a, b) => b.score - a.score).slice(0, 10);
+        tbody.innerHTML = sorted.map((item, idx) => `
+            <tr>
+                <td><strong>#${idx + 1}</strong></td>
+                <td>${Utils.escapeHtml(item.userEmail)}</td>
+                <td>${Utils.escapeHtml(item.testTitle)}</td>
+                <td><span class="score-badge" style="color:var(--success-color); font-weight:bold;">${item.score}%</span></td>
+            </tr>
+        `).join('');
+    },
+
+    renderUserHistory() {
+        const tbody = document.getElementById('userHistoryTableBody');
+        if (!tbody || !IntermapState.currentUser) return;
+
+        const subs = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS) || '[]');
+        const userSubs = subs.filter(s => s.userEmail === IntermapState.currentUser.email);
+
+        if (userSubs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-sub);">Ви ще не проходили тести</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = userSubs.reverse().map(item => `
+            <tr>
+                <td>${Utils.escapeHtml(item.testTitle)}</td>
+                <td><strong>${item.score}%</strong></td>
+                <td>${item.date}</td>
+            </tr>
+        `).join('');
+    },
+
+    showToast(msg, type = 'info') {
+        const container = document.getElementById('toastContainer') || this.createToastContainer();
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.style.cssText = `
+            padding: 12px 20px;
+            margin-top: 8px;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 600;
+            background: ${type === 'success' ? '#10b981' : (type === 'error' ? '#ef4444' : '#3b82f6')};
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            transition: all 0.3s ease;
+        `;
+        toast.textContent = msg;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    },
+
+    createToastContainer() {
+        const container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 10000;';
+        document.body.appendChild(container);
+        return container;
+    }
+};
+
+// ============================================================================
+// 9. ДОПОМІЖНІ УТИЛІТИ (UTILS)
+// ============================================================================
+
+const Utils = {
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    },
+
+    generateUniqueId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    }
+};
