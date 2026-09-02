@@ -110,7 +110,7 @@ const IntermapState = {
 };
 
 // ============================================================================
-// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ ТА ПОДІЙ
+// 2. ІНІЦІАЛІЗАЦІЯ ДОДАТКУ ТА ПОДІЙ (FIREBASE INTEGRATED)
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -119,62 +119,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const IntermapEngine = {
     init() {
-        this.initStorage();
-        this.initAuth();
-        this.initCanvasEngine();
         this.initUIControls();
         this.initAudioSynthesizer();
         this.loadCatalog();
         this.updateUserInterface();
     },
 
-    initStorage() {
-        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS)) {
-            localStorage.setItem(
-                INTERMAP_CONFIG.STORAGE_KEYS.TESTS,
-                JSON.stringify([INTERMAP_CONFIG.DEFAULT_MAP])
-            );
-        }
-        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS)) {
-            localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.SUBMISSIONS, JSON.stringify([]));
-        }
-        if (!localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.USERS)) {
-            localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.USERS, JSON.stringify([]));
-        }
-    },
-
-    initAuth() {
-        const savedAuth = localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-        if (savedAuth) {
-            try {
-                IntermapState.currentUser = JSON.parse(savedAuth);
-            } catch (e) {
-                localStorage.removeItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-            }
-        }
-    },
-
     initUIControls() {
-        // Кнопка входу / виходу
+        // --- 1. Модальні вікна та Навігація ---
         const loginBtn = document.getElementById('loginModalBtn');
-        const logoutBtn = document.getElementById('userLogoutBtn');
-        const tripleAuthBtn = document.getElementById('tripleAuthSubmitBtn');
-
         if (loginBtn) loginBtn.addEventListener('click', () => UI.showModal('authModal'));
-        if (logoutBtn) logoutBtn.addEventListener('click', () => AuthModule.logout());
-        if (tripleAuthBtn) tripleAuthBtn.addEventListener('click', () => AuthModule.handleTripleAuth());
 
-        // Вкладки каталогу
+        document.querySelectorAll('.close-modal-btn').forEach(btn => {
+            btn.addEventListener('click', () => UI.closeAllModals());
+        });
+
+        // --- 2. Авторизація через Firebase ---
+        
+        // Кнопка Входу (Email + Пароль)
+        const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+        if (loginSubmitBtn) {
+            loginSubmitBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('authEmailInput')?.value.trim();
+                const password = document.getElementById('authPasswordInput')?.value.trim();
+                
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.login(email, password);
+                }
+            });
+        }
+
+        // Кнопка Реєстрації
+        const registerSubmitBtn = document.getElementById('registerSubmitBtn');
+        if (registerSubmitBtn) {
+            registerSubmitBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('authEmailInput')?.value.trim();
+                const password = document.getElementById('authPasswordInput')?.value.trim();
+
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.register(email, password);
+                }
+            });
+        }
+
+        // Кнопка Потрійної Авторизації (Для Адміна)
+        const tripleAuthBtn = document.getElementById('tripleAuthSubmitBtn');
+        if (tripleAuthBtn) {
+            tripleAuthBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('authEmailInput')?.value.trim();
+                const password = document.getElementById('authPasswordInput')?.value.trim();
+                const tg = document.getElementById('authTgInput')?.value.trim();
+                const secret = document.getElementById('authSecretInput')?.value.trim();
+
+                if (window.FirebaseAuthModule) {
+                    await window.FirebaseAuthModule.handleTripleAuth(email, password, tg, secret);
+                }
+            });
+        }
+
+        // --- 3. Контролери та Фільтри ---
         const catalogFilterBtns = document.querySelectorAll('.catalog-filter-btn');
         catalogFilterBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 catalogFilterBtns.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 this.loadCatalog(btn.getAttribute('data-category'));
             });
         });
 
-        // Контролери зуму картографічного полотна
         const zoomInBtn = document.getElementById('zoomInBtn');
         const zoomOutBtn = document.getElementById('zoomOutBtn');
         const resetViewBtn = document.getElementById('resetViewBtn');
@@ -182,68 +197,69 @@ const IntermapEngine = {
         if (zoomInBtn) zoomInBtn.addEventListener('click', () => CanvasEngine.adjustZoom(1.2));
         if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => CanvasEngine.adjustZoom(0.8));
         if (resetViewBtn) resetViewBtn.addEventListener('click', () => CanvasEngine.resetView());
-
-        // Управління модальними вікнами
-        document.querySelectorAll('.close-modal-btn').forEach(btn => {
-            btn.addEventListener('click', () => UI.closeAllModals());
-        });
     },
 
     initAudioSynthesizer() {
-        AudioEngine.init();
+        if (window.AudioEngine) AudioEngine.init();
     },
 
+    // Отримання тесту з Firebase Realtime Database
     loadCatalog(category = 'all') {
-        const tests = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS) || '[]');
         const catalogContainer = document.getElementById('testsCatalogGrid');
         if (!catalogContainer) return;
 
-        const filtered = category === 'all' 
-            ? tests 
-            : tests.filter(t => t.category === category);
+        // Зчитуємо дані з бази у реальному часі
+        if (window.FirebaseDB) {
+            window.FirebaseDB.listenToTests((tests) => {
+                const filtered = category === 'all' 
+                    ? tests 
+                    : tests.filter(t => t.category === category);
 
-        if (filtered.length === 0) {
-            catalogContainer.innerHTML = `
-                <div class="empty-catalog-msg" style="grid-column: 1/-1; text-align: center; color: var(--text-sub); padding: 40px;">
-                    <i class="fa-solid fa-map-location-dot" style="font-size: 3rem; margin-bottom: 10px;"></i>
-                    <p>У цій категорії поки немає доступних тестів.</p>
-                </div>`;
-            return;
+                if (filtered.length === 0) {
+                    catalogContainer.innerHTML = `
+                        <div class="empty-catalog-msg" style="grid-column: 1/-1; text-align: center; color: var(--text-sub); padding: 40px;">
+                            <i class="fa-solid fa-map-location-dot" style="font-size: 3rem; margin-bottom: 10px;"></i>
+                            <p>У цій категорії поки немає доступних тестів.</p>
+                        </div>`;
+                    return;
+                }
+
+                catalogContainer.innerHTML = filtered.map(test => `
+                    <div class="test-card">
+                        <div class="test-card-banner" style="background-image: url('${test.mapUrl}'); background-size: cover; height: 140px; border-radius: 8px 8px 0 0; position: relative;">
+                            <span class="test-badge">${test.category || 'Географія'}</span>
+                        </div>
+                        <div class="test-card-body" style="padding: 15px;">
+                            <h3 style="margin: 0 0 8px 0;">${Utils.escapeHtml(test.title)}</h3>
+                            <p style="color: var(--text-sub); font-size: 0.85rem; margin-bottom: 15px;">
+                                Кількість питань: ${test.questions ? test.questions.length : 0} | Областей: ${test.shapes ? test.shapes.length : 0}
+                            </p>
+                            <button onclick="QuizEngine.startTest('${test.id}')" class="btn-primary" style="width: 100%;">
+                                <i class="fa-solid fa-play"></i> Розпочати тест
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            });
         }
-
-        catalogContainer.innerHTML = filtered.map(test => `
-            <div class="test-card">
-                <div class="test-card-banner" style="background-image: url('${test.mapUrl}'); background-size: cover; height: 140px; border-radius: 8px 8px 0 0; position: relative;">
-                    <span class="test-badge">${test.category || 'Географія'}</span>
-                </div>
-                <div class="test-card-body" style="padding: 15px;">
-                    <h3 style="margin: 0 0 8px 0;">${Utils.escapeHtml(test.title)}</h3>
-                    <p style="color: var(--text-sub); font-size: 0.85rem; margin-bottom: 15px;">
-                        Кількість питань: ${test.questions ? test.questions.length : 0} | Областей: ${test.shapes ? test.shapes.length : 0}
-                    </p>
-                    <button onclick="QuizEngine.startTest(${test.id})" class="btn-primary" style="width: 100%;">
-                        <i class="fa-solid fa-play"></i> Розпочати тест
-                    </button>
-                </div>
-            </div>
-        `).join('');
     },
 
     updateUserInterface() {
         const userNavInfo = document.getElementById('userNavInfo');
         const adminPanelBtn = document.getElementById('adminPanelNavBtn');
+        const currentUser = window.IntermapState?.currentUser;
 
-        if (IntermapState.currentUser) {
+        if (currentUser) {
             if (userNavInfo) {
                 userNavInfo.innerHTML = `
-                    <span class="user-email-tag"><i class="fa-solid fa-user-circle"></i> ${Utils.escapeHtml(IntermapState.currentUser.email)}</span>
+                    <span class="user-email-tag"><i class="fa-solid fa-user-circle"></i> ${Utils.escapeHtml(currentUser.email)}</span>
                     <button id="userLogoutBtn" class="btn-secondary-sm"><i class="fa-solid fa-right-from-bracket"></i></button>
                 `;
                 document.getElementById('userLogoutBtn')?.addEventListener('click', () => AuthModule.logout());
             }
 
             if (adminPanelBtn) {
-                if (IntermapState.currentUser.role === 'admin' || INTERMAP_CONFIG.OWNER_EMAILS.includes(IntermapState.currentUser.email)) {
+                if (currentUser.role === 'admin' || INTERMAP_CONFIG.OWNER_EMAILS.includes(currentUser.email)) {
                     adminPanelBtn.style.display = 'inline-flex';
                 } else {
                     adminPanelBtn.style.display = 'none';
@@ -253,7 +269,7 @@ const IntermapEngine = {
             if (userNavInfo) {
                 userNavInfo.innerHTML = `
                     <button id="loginModalBtn" class="btn-primary-sm">
-                        <i class="fa-solid fa-lock"></i> Вхід для вчителя / Адміна
+                        <i class="fa-solid fa-lock"></i> Вхід / Реєстрація
                     </button>
                 `;
                 document.getElementById('loginModalBtn')?.addEventListener('click', () => UI.showModal('authModal'));
@@ -261,85 +277,22 @@ const IntermapEngine = {
             if (adminPanelBtn) adminPanelBtn.style.display = 'none';
         }
 
-        UI.renderLeaderboard();
-        UI.renderUserHistory();
+        if (window.UI?.renderLeaderboard) UI.renderLeaderboard();
+        if (window.UI?.renderUserHistory) UI.renderUserHistory();
     }
 };
 
 // ============================================================================
-// 3. АВТОРИЗАЦІЯ ТА ПОТРІЙНА ПЕРЕВІРКА (TRIPLE AUTH)
+// 3. АВТОРИЗАЦІЯ (ПЕРЕНЕРАХОВАНО НА FIREBASE)
 // ============================================================================
 
 const AuthModule = {
-    login(email, role = 'student') {
-        const user = {
-            email: email,
-            role: role,
-            loggedInAt: new Date().toISOString()
-        };
-
-        IntermapState.currentUser = user;
-        localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(user));
-
-        if (INTERMAP_CONFIG.OWNER_EMAILS.includes(email)) {
-            localStorage.setItem('isOwnerAuthorized', 'true');
-            localStorage.setItem('userRole', 'admin');
-            localStorage.setItem('userEmail', email);
-        } else {
-            localStorage.setItem('userRole', role);
-            localStorage.setItem('userEmail', email);
-        }
-
-        UI.closeAllModals();
-        IntermapEngine.updateUserInterface();
-        UI.showToast(`Ласкаво просимо, ${email}!`, 'success');
-        AudioEngine.play('success');
-    },
-
-    logout() {
-        IntermapState.currentUser = null;
-        localStorage.removeItem(INTERMAP_CONFIG.STORAGE_KEYS.AUTH_TOKEN);
-        localStorage.removeItem('isOwnerAuthorized');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userEmail');
-
-        IntermapEngine.updateUserInterface();
-        UI.showToast('Ви вийшли з акаунта', 'info');
-    },
-
-    handleTripleAuth() {
-        const emailInput = document.getElementById('authEmailInput')?.value.trim();
-        const tgInput = document.getElementById('authTgInput')?.value.trim();
-        const secretInput = document.getElementById('authSecretInput')?.value.trim();
-
-        if (!emailInput) {
-            UI.showToast('Введіть ваш Email', 'error');
-            return;
-        }
-
-        // Перевірка прав власника за даними
-        const isOwner = INTERMAP_CONFIG.OWNER_EMAILS.includes(emailInput);
-        const isTgValid = tgInput === INTERMAP_CONFIG.TRIPLE_AUTH_SECRETS.TELEGRAM_USERNAME;
-        const isSecretValid = secretInput === INTERMAP_CONFIG.TRIPLE_AUTH_SECRETS.GOOGLE_KEY;
-
-        if (isOwner) {
-            if (isTgValid && isSecretValid) {
-                localStorage.setItem('isOwnerAuthorized', 'true');
-                localStorage.setItem('userRole', 'admin');
-                this.login(emailInput, 'admin');
-                UI.showToast('Потрійну авторизацію пройдено! Доступ до адмін-панелі відкрито.', 'success');
-                setTimeout(() => { window.location.href = 'admin.html'; }, 1000);
-            } else {
-                UI.showToast('Невірний Telegram Username або Google Secret Key!', 'error');
-                AudioEngine.play('error');
-            }
-        } else {
-            // Звичайний вхід студента
-            this.login(emailInput, 'student');
+    async logout() {
+        if (window.FirebaseAuthModule) {
+            await window.FirebaseAuthModule.logout();
         }
     }
 };
-
 // ============================================================================
 // 4. CANVAS ENGINE (ВІДМАЛЬОВКА, HIT-TESTING, RAY-CASTING)
 // ============================================================================
