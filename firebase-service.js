@@ -1,0 +1,188 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { 
+    getAuth, 
+    createUserWithEmailAndPassword, 
+    signInWithEmailAndPassword, 
+    signOut, 
+    onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { 
+    getDatabase, 
+    ref, 
+    set, 
+    get, 
+    child, 
+    onValue, 
+    push 
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+// Конфігурація Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBZ28ZGCSTtb659rpmp0mgf_hcv1AVscFQ",
+  authDomain: "intermap-app.firebaseapp.com",
+  databaseURL: "https://intermap-app-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "intermap-app",
+  storageBucket: "intermap-app.firebasestorage.app",
+  messagingSenderId: "869707502446",
+  appId: "1:869707502446:web:9cd7b1cab1c74f5e79e77f",
+  measurementId: "G-QB0SF133NB"
+};
+
+// Ініціалізація
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getDatabase(app);
+
+const OWNER_EMAILS = [
+    "vanyary16@gmail.com",
+    "vanyarybalka13@gmail.com"
+];
+
+// ==========================================
+// 1. СИСТЕМА АВТОРИЗАЦІЇ (FIREBASE AUTH)
+// ==========================================
+
+export const FirebaseAuthModule = {
+    // Реєстрація нового користувача
+    async register(email, password) {
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            const role = OWNER_EMAILS.includes(email) ? 'admin' : 'student';
+
+            // Збереження даних про профіль у Realtime DB
+            await set(ref(db, 'users/' + user.uid), {
+                uid: user.uid,
+                email: email,
+                role: role,
+                createdAt: new Date().toISOString(),
+                status: 'Active'
+            });
+
+            UI.showToast('Акаунт успішно створено!', 'success');
+            return user;
+        } catch (error) {
+            UI.showToast(this.getErrorMessage(error.code), 'error');
+            throw error;
+        }
+    },
+
+    // Вхід за Email та Паролем
+    async login(email, password) {
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            UI.showToast('Вхід успішний!', 'success');
+            return userCredential.user;
+        } catch (error) {
+            UI.showToast(this.getErrorMessage(error.code), 'error');
+            throw error;
+        }
+    },
+
+    // Вхід для адміна (Triple Auth + Firebase)
+    async handleTripleAuth(email, password, tgUsername, googleSecret) {
+        if (tgUsername !== "@IvanIntermap" || googleSecret !== "G-161013") {
+            UI.showToast('Невірний Telegram Username або Secret Key!', 'error');
+            return;
+        }
+
+        try {
+            const user = await this.login(email, password);
+            if (OWNER_EMAILS.includes(email)) {
+                localStorage.setItem('isOwnerAuthorized', 'true');
+                localStorage.setItem('userRole', 'admin');
+                localStorage.setItem('userEmail', email);
+                window.location.href = 'admin.html';
+            } else {
+                UI.showToast('Ваш акаунт не має прав Власника!', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    // Вихід з акаунта
+    async logout() {
+        await signOut(auth);
+        localStorage.removeItem('isOwnerAuthorized');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userEmail');
+        UI.showToast('Ви вийшли з акаунта', 'info');
+    },
+
+    getErrorMessage(code) {
+        switch (code) {
+            case 'auth/email-already-in-use': return 'Цей Email вже зареєстровано!';
+            case 'auth/invalid-email': return 'Некоректний Email!';
+            case 'auth/weak-password': return 'Пароль має бути не менше 6 символів!';
+            case 'auth/user-not-found': return 'Користувача з таким Email не знайдено!';
+            case 'auth/wrong-password': return 'Невірний пароль!';
+            default: return 'Помилка авторизації: ' + code;
+        }
+    }
+};
+
+// ==========================================
+// 2. REALTIME DATABASE СИНХРОНІЗАЦІЯ
+// ==========================================
+
+export const FirebaseDB = {
+    // Отримання списку тестів у реальному часі
+    listenToTests(callback) {
+        const testsRef = ref(db, 'tests');
+        onValue(testsRef, (snapshot) => {
+            const data = snapshot.val();
+            const testsList = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+            callback(testsList);
+        });
+    },
+
+    // Збереження результату тесту учня
+    async saveSubmission(submissionData) {
+        const submissionsRef = ref(db, 'submissions');
+        const newSubRef = push(submissionsRef);
+        await set(newSubRef, {
+            ...submissionData,
+            createdAt: new Date().toISOString()
+        });
+    },
+
+    // Отримання таблиці лідерів
+    listenToLeaderboard(callback) {
+        const subRef = ref(db, 'submissions');
+        onValue(subRef, (snapshot) => {
+            const data = snapshot.val();
+            const list = data ? Object.values(data) : [];
+            callback(list);
+        });
+    }
+};
+
+// ==========================================
+// 3. СТАТУС АВТОРИЗАЦІЇ В РЕАЛЬНОМУ ЧАСІ
+// ==========================================
+
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        const dbRef = ref(db);
+        const snapshot = await get(child(dbRef, `users/${user.uid}`));
+        const userData = snapshot.exists() ? snapshot.val() : { email: user.email, role: 'student' };
+
+        window.IntermapState.currentUser = userData;
+        localStorage.setItem('userEmail', user.email);
+        localStorage.setItem('userRole', userData.role);
+
+        if (userData.role === 'admin') {
+            localStorage.setItem('isOwnerAuthorized', 'true');
+        }
+    } else {
+        window.IntermapState.currentUser = null;
+        localStorage.removeItem('isOwnerAuthorized');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userEmail');
+    }
+
+    if (window.IntermapEngine && window.IntermapEngine.updateUserInterface) {
+        window.IntermapEngine.updateUserInterface();
+    }
+});
