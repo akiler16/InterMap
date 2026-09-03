@@ -578,13 +578,25 @@ function initUserManagement() {
     }
 }
 
+// ==========================================
+// 7. УПРАВЛІННЯ КОРИСТУВАЧАМИ ТА РОЛЯМИ
+// ==========================================
+function initUserManagement() {
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            renderUsersList(e.target.value.toLowerCase());
+        });
+    }
+}
+
 function renderUsersList(filterText = '') {
     const tbody = document.getElementById('usersListTable');
     if (!tbody) return;
 
     const filteredUsers = AdminState.users.filter(u => 
         u.email.toLowerCase().includes(filterText) || 
-        u.role.toLowerCase().includes(filterText)
+        (u.role && u.role.toLowerCase().includes(filterText))
     );
 
     if (filteredUsers.length === 0) {
@@ -596,9 +608,17 @@ function renderUsersList(filterText = '') {
         <tr>
             <td><strong>${escapeHtml(user.email)}</strong></td>
             <td>
-                <span style="padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; background: ${user.role === 'Owner' || user.role === 'Admin' ? 'rgba(59,130,246,0.2)' : 'rgba(148,163,184,0.2)'}; color: ${user.role === 'Owner' ? '#3b82f6' : '#f8fafc'};">
-                    ${user.role}
-                </span>
+                ${user.role === 'Owner' ? `
+                    <span style="padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; background: rgba(59,130,246,0.2); color: #3b82f6; font-weight: bold;">
+                        Власник (Owner)
+                    </span>
+                ` : `
+                    <select onchange="changeUserRole(${user.id}, this.value)" style="background: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-color); padding: 5px 10px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">
+                        <option value="admin" ${user.role === 'admin' || user.role === 'Admin' ? 'selected' : ''}>👑 Адмін</option>
+                        <option value="teacher" ${user.role === 'teacher' || user.role === 'Teacher' ? 'selected' : ''}>👨‍🏫 Учитель</option>
+                        <option value="student" ${user.role === 'student' || user.role === 'Student' ? 'selected' : ''}>🎓 Студент</option>
+                    </select>
+                `}
             </td>
             <td>${user.registeredAt || '2026-01-01'}</td>
             <td><span style="color: ${user.status === 'Blocked' ? 'var(--danger-color)' : 'var(--success-color)'}">${user.status || 'Active'}</span></td>
@@ -615,6 +635,23 @@ function renderUsersList(filterText = '') {
         </tr>
     `).join('');
 }
+
+// Глобальна функція зміни ролі користувача
+window.changeUserRole = function(userId, newRole) {
+    const user = AdminState.users.find(u => u.id === userId);
+    if (!user) return;
+
+    user.role = newRole;
+    saveDatabase(CONFIG.STORAGE_KEYS.USERS, AdminState.users);
+
+    const roleNames = {
+        'admin': 'Адміністратор',
+        'teacher': 'Учитель',
+        'student': 'Студент'
+    };
+
+    showToast(`Роль користувача ${user.email} змінено на "${roleNames[newRole] || newRole}".`, 'success');
+};
 
 window.toggleUserStatus = function(userId) {
     const user = AdminState.users.find(u => u.id === userId);
