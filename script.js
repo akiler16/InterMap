@@ -119,6 +119,7 @@ const IntermapEngine = {
     init() {
         this.initUIControls();
         this.initAudioSynthesizer();
+        CanvasEngine.initCanvasEngine();
         this.loadCatalog();
         this.updateUserInterface();
     },
@@ -198,45 +199,54 @@ const IntermapEngine = {
         const catalogContainer = document.getElementById('testsCatalogGrid');
         if (!catalogContainer) return;
 
-        if (window.FirebaseDB) {
-            window.FirebaseDB.listenToTests((tests) => {
-                const filtered = category === 'all' 
-                    ? tests 
-                    : tests.filter(t => t.category === category);
+        const renderTests = (tests) => {
+            const filtered = category === 'all' 
+                ? tests 
+                : tests.filter(t => t.category === category);
 
-                if (filtered.length === 0) {
-                    catalogContainer.innerHTML = `
-                        <div class="empty-catalog-msg" style="grid-column: 1/-1; text-align: center; color: var(--text-sub); padding: 40px;">
-                            <i class="fa-solid fa-map-location-dot" style="font-size: 3rem; margin-bottom: 10px;"></i>
-                            <p>У цій категорії поки немає доступних тестів.</p>
-                        </div>`;
-                    return;
-                }
+            if (filtered.length === 0) {
+                catalogContainer.innerHTML = `
+                    <div class="empty-catalog-msg" style="grid-column: 1/-1; text-align: center; color: var(--text-sub); padding: 40px;">
+                        <i class="fa-solid fa-map-location-dot" style="font-size: 3rem; margin-bottom: 10px;"></i>
+                        <p>У цій категорії поки немає доступних тестів.</p>
+                    </div>`;
+                return;
+            }
 
-                catalogContainer.innerHTML = filtered.map(test => `
-                    <div class="test-card">
-                        <div class="test-card-banner" style="background-image: url('${test.mapUrl}'); background-size: cover; height: 140px; border-radius: 8px 8px 0 0; position: relative;">
-                            <span class="test-badge">${test.category || 'Географія'}</span>
-                        </div>
-                        <div class="test-card-body" style="padding: 15px;">
-                            <h3 style="margin: 0 0 8px 0;">${Utils.escapeHtml(test.title)}</h3>
-                            <p style="color: var(--text-sub); font-size: 0.85rem; margin-bottom: 15px;">
-                                Кількість питань: ${test.questions ? test.questions.length : 0} | Областей: ${test.shapes ? test.shapes.length : 0}
-                            </p>
-                            <button onclick="QuizEngine.startTest('${test.id}')" class="btn-primary" style="width: 100%;">
-                                <i class="fa-solid fa-play"></i> Розпочати тест
-                            </button>
-                        </div>
+            catalogContainer.innerHTML = filtered.map(test => `
+                <div class="test-card">
+                    <div class="test-card-banner" style="background-image: url('${test.mapUrl}'); background-size: cover; height: 140px; border-radius: 8px 8px 0 0; position: relative;">
+                        <span class="test-badge">${test.category || 'Географія'}</span>
                     </div>
-                `).join('');
-            });
+                    <div class="test-card-body" style="padding: 15px;">
+                        <h3 style="margin: 0 0 8px 0;">${Utils.escapeHtml(test.title)}</h3>
+                        <p style="color: var(--text-sub); font-size: 0.85rem; margin-bottom: 15px;">
+                            Кількість питань: ${test.questions ? test.questions.length : 0} | Областей: ${test.shapes ? test.shapes.length : 0}
+                        </p>
+                        <button onclick="QuizEngine.startTest('${test.id}')" class="btn-primary" style="width: 100%;">
+                            <i class="fa-solid fa-play"></i> Розпочати тест
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        };
+
+        if (window.FirebaseDB) {
+            window.FirebaseDB.listenToTests(renderTests);
+        } else {
+            const localTests = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS) || '[]');
+            if (localTests.length === 0) {
+                localTests.push(INTERMAP_CONFIG.DEFAULT_MAP);
+                localStorage.setItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS, JSON.stringify(localTests));
+            }
+            renderTests(localTests);
         }
     },
 
     updateUserInterface() {
         const userNavInfo = document.getElementById('userNavInfo');
         const adminPanelBtn = document.getElementById('adminPanelNavBtn');
-        const currentUser = window.IntermapState?.currentUser;
+        const currentUser = IntermapState.currentUser;
 
         if (currentUser) {
             if (userNavInfo) {
@@ -279,6 +289,14 @@ const AuthModule = {
     async logout() {
         if (window.FirebaseAuthModule) {
             await window.FirebaseAuthModule.logout();
+        } else {
+            localStorage.removeItem('isOwnerAuthorized');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userEmail');
+            localStorage.removeItem('authUser');
+            IntermapState.currentUser = null;
+            IntermapEngine.updateUserInterface();
+            window.location.reload();
         }
     }
 };
@@ -551,8 +569,13 @@ const Geometry = {
 
 const QuizEngine = {
     async startTest(testId) {
+        let test = null;
         const tests = JSON.parse(localStorage.getItem(INTERMAP_CONFIG.STORAGE_KEYS.TESTS) || '[]');
-        const test = tests.find(t => t.id === testId);
+        test = tests.find(t => t.id === testId);
+
+        if (!test && testId === INTERMAP_CONFIG.DEFAULT_MAP.id) {
+            test = INTERMAP_CONFIG.DEFAULT_MAP;
+        }
 
         if (!test) {
             UI.showToast('Тест не знайдено в системі', 'error');
@@ -877,13 +900,12 @@ const UI = {
 };
 
 // ============================================================================
-// 9. ДОПОМІЖНІ УТИЛІТИ
+// 9. ДОПОМІЖНІ УТИЛІТИ ТА ОБРОБНИКИ ВИХОДУ
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logoutBtn');
 
-    // 1. Перевірка авторизації: показуємо кнопку, якщо користувач увійшов
     function checkAuthStatus() {
         const isAuthorized = localStorage.getItem('isOwnerAuthorized') || 
                              localStorage.getItem('userRole') || 
@@ -898,27 +920,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Запускаємо перевірку при завантаженні
     checkAuthStatus();
 
-    // 2. Логіка натискання на кнопку "Вийти"
     logoutBtn?.addEventListener('click', async () => {
         if (confirm('Ви дійсно бажаєте вийти з акаунта?')) {
             try {
-                // Вихід з Firebase (якщо використовується)
                 if (window.FirebaseAuthModule && typeof window.FirebaseAuthModule.logout === 'function') {
                     await window.FirebaseAuthModule.logout();
                 }
             } catch (error) {
                 console.error('Помилка при виході з Firebase:', error);
             } finally {
-                // Очищення локального сховища
                 localStorage.removeItem('isOwnerAuthorized');
                 localStorage.removeItem('userRole');
                 localStorage.removeItem('userEmail');
                 localStorage.removeItem('authUser');
-
-                // Оновлюємо сторінку
                 window.location.reload();
             }
         }
@@ -941,5 +957,14 @@ const Utils = {
     }
 };
 
+// Експорт у глобальну область видимості
+window.INTERMAP_CONFIG = INTERMAP_CONFIG;
 window.IntermapState = IntermapState;
+window.IntermapEngine = IntermapEngine;
+window.CanvasEngine = CanvasEngine;
+window.QuizEngine = QuizEngine;
+window.AudioEngine = AudioEngine;
+window.AuthModule = AuthModule;
 window.UI = UI;
+window.Utils = Utils;
+window.redrawStudentCanvas = redrawStudentCanvas;
