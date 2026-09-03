@@ -4,7 +4,9 @@ import {
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
     signOut, 
-    onAuthStateChanged 
+    onAuthStateChanged,
+    GoogleAuthProvider,
+    signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { 
     getDatabase, 
@@ -38,6 +40,14 @@ const OWNER_EMAILS = [
     "vanyarybalka13@gmail.com"
 ];
 
+function safeToast(msg, type) {
+    if (window.UI && window.UI.showToast) {
+        window.UI.showToast(msg, type);
+    } else {
+        alert(msg);
+    }
+}
+
 // ==========================================
 // 1. СИСТЕМА АВТОРИЗАЦІЇ (FIREBASE AUTH)
 // ==========================================
@@ -50,7 +60,6 @@ export const FirebaseAuthModule = {
             const user = userCredential.user;
             const role = OWNER_EMAILS.includes(email) ? 'admin' : 'student';
 
-            // Збереження даних про профіль у Realtime DB
             await set(ref(db, 'users/' + user.uid), {
                 uid: user.uid,
                 email: email,
@@ -59,10 +68,10 @@ export const FirebaseAuthModule = {
                 status: 'Active'
             });
 
-            UI.showToast('Акаунт успішно створено!', 'success');
+            safeToast('Акаунт успішно створено!', 'success');
             return user;
         } catch (error) {
-            UI.showToast(this.getErrorMessage(error.code), 'error');
+            safeToast(this.getErrorMessage(error.code), 'error');
             throw error;
         }
     },
@@ -71,18 +80,30 @@ export const FirebaseAuthModule = {
     async login(email, password) {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            UI.showToast('Вхід успішний!', 'success');
+            safeToast('Вхід успішний!', 'success');
             return userCredential.user;
         } catch (error) {
-            UI.showToast(this.getErrorMessage(error.code), 'error');
+            safeToast(this.getErrorMessage(error.code), 'error');
             throw error;
+        }
+    },
+
+    // Вхід через Google
+    async googleLogin() {
+        try {
+            const provider = new GoogleAuthProvider();
+            const userCredential = await signInWithPopup(auth, provider);
+            safeToast('Успішний вхід через Google!', 'success');
+            return userCredential.user;
+        } catch (error) {
+            safeToast('Помилка Google Auth: ' + error.message, 'error');
         }
     },
 
     // Вхід для адміна (Triple Auth + Firebase)
     async handleTripleAuth(email, password, tgUsername, googleSecret) {
         if (tgUsername !== "@IvanIntermap" || googleSecret !== "G-161013") {
-            UI.showToast('Невірний Telegram Username або Secret Key!', 'error');
+            safeToast('Невірний Telegram Username або Secret Key!', 'error');
             return;
         }
 
@@ -94,7 +115,7 @@ export const FirebaseAuthModule = {
                 localStorage.setItem('userEmail', email);
                 window.location.href = 'admin.html';
             } else {
-                UI.showToast('Ваш акаунт не має прав Власника!', 'error');
+                safeToast('Ваш акаунт не має прав Власника!', 'error');
             }
         } catch (e) {
             console.error(e);
@@ -107,7 +128,7 @@ export const FirebaseAuthModule = {
         localStorage.removeItem('isOwnerAuthorized');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userEmail');
-        UI.showToast('Ви вийшли з акаунта', 'info');
+        safeToast('Ви вийшли з акаунта', 'info');
     },
 
     getErrorMessage(code) {
@@ -127,7 +148,6 @@ export const FirebaseAuthModule = {
 // ==========================================
 
 export const FirebaseDB = {
-    // Отримання списку тестів у реальному часі
     listenToTests(callback) {
         const testsRef = ref(db, 'tests');
         onValue(testsRef, (snapshot) => {
@@ -137,7 +157,6 @@ export const FirebaseDB = {
         });
     },
 
-    // Збереження результату тесту учня
     async saveSubmission(submissionData) {
         const submissionsRef = ref(db, 'submissions');
         const newSubRef = push(submissionsRef);
@@ -147,7 +166,6 @@ export const FirebaseDB = {
         });
     },
 
-    // Отримання таблиці лідерів
     listenToLeaderboard(callback) {
         const subRef = ref(db, 'submissions');
         onValue(subRef, (snapshot) => {
@@ -158,15 +176,30 @@ export const FirebaseDB = {
     }
 };
 
+// Експортуємо модулі у глобальну область
+window.FirebaseAuthModule = FirebaseAuthModule;
+window.FirebaseDB = FirebaseDB;
+
 // ==========================================
 // 3. СТАТУС АВТОРИЗАЦІЇ В РЕАЛЬНОМУ ЧАСІ
 // ==========================================
 
 onAuthStateChanged(auth, async (user) => {
+    if (!window.IntermapState) {
+        window.IntermapState = {};
+    }
+
     if (user) {
         const dbRef = ref(db);
-        const snapshot = await get(child(dbRef, `users/${user.uid}`));
-        const userData = snapshot.exists() ? snapshot.val() : { email: user.email, role: 'student' };
+        let userData = { email: user.email, role: 'student' };
+        try {
+            const snapshot = await get(child(dbRef, `users/${user.uid}`));
+            if (snapshot.exists()) {
+                userData = snapshot.val();
+            }
+        } catch(e) {
+            console.error(e);
+        }
 
         window.IntermapState.currentUser = userData;
         localStorage.setItem('userEmail', user.email);
@@ -185,7 +218,4 @@ onAuthStateChanged(auth, async (user) => {
     if (window.IntermapEngine && window.IntermapEngine.updateUserInterface) {
         window.IntermapEngine.updateUserInterface();
     }
-    // Робимо модулі глобально доступними для script.js та admin.js
-    window.FirebaseAuthModule = FirebaseAuthModule;
-    window.FirebaseDB = FirebaseDB;
 });
