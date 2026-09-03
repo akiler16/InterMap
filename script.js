@@ -880,6 +880,51 @@ const UI = {
 // 9. ДОПОМІЖНІ УТИЛІТИ
 // ============================================================================
 
+document.addEventListener('DOMContentLoaded', () => {
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    // 1. Перевірка авторизації: показуємо кнопку, якщо користувач увійшов
+    function checkAuthStatus() {
+        const isAuthorized = localStorage.getItem('isOwnerAuthorized') || 
+                             localStorage.getItem('userRole') || 
+                             localStorage.getItem('userEmail');
+
+        if (logoutBtn) {
+            if (isAuthorized) {
+                logoutBtn.style.display = 'inline-flex';
+            } else {
+                logoutBtn.style.display = 'none';
+            }
+        }
+    }
+
+    // Запускаємо перевірку при завантаженні
+    checkAuthStatus();
+
+    // 2. Логіка натискання на кнопку "Вийти"
+    logoutBtn?.addEventListener('click', async () => {
+        if (confirm('Ви дійсно бажаєте вийти з акаунта?')) {
+            try {
+                // Вихід з Firebase (якщо використовується)
+                if (window.FirebaseAuthModule && typeof window.FirebaseAuthModule.logout === 'function') {
+                    await window.FirebaseAuthModule.logout();
+                }
+            } catch (error) {
+                console.error('Помилка при виході з Firebase:', error);
+            } finally {
+                // Очищення локального сховища
+                localStorage.removeItem('isOwnerAuthorized');
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userEmail');
+                localStorage.removeItem('authUser');
+
+                // Оновлюємо сторінку
+                window.location.reload();
+            }
+        }
+    });
+});
+
 const Utils = {
     escapeHtml(str) {
         if (!str) return '';
