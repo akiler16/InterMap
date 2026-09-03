@@ -6,6 +6,8 @@
     <title>Панель Адміністратора | Intermap</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js для відображення аналітики -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-primary: #0f172a;
@@ -44,6 +46,7 @@
             display: flex;
             flex-direction: column;
             padding: 20px;
+            flex-shrink: 0;
         }
 
         .sidebar-brand {
@@ -213,10 +216,83 @@
             border-radius: 6px;
             cursor: pointer;
             font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .btn-primary:hover {
             background-color: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background-color: transparent;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--border-color);
+        }
+
+        /* Editor Layout */
+        .editor-container {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+            height: 550px;
+        }
+
+        .canvas-wrapper {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .editor-sidebar {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .shapes-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .shape-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: var(--bg-secondary);
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 0.9rem;
         }
 
         /* Toggle switch */
@@ -268,13 +344,6 @@
         }
     </style>
 </head>
-
-    <!-- 1. Підключаємо Firebase сервіс як модуль -->
-<script type="module" src="firebase-service.js"></script>
-
-<!-- 2. Після нього підключаємо ваші основні скрипти -->
-<script src="script.js"></script>
-    
 <body>
     <div class="admin-container">
         <!-- Sidebar Navigation -->
@@ -292,6 +361,16 @@
                     <li class="nav-item">
                         <button class="nav-btn" data-tab="tests">
                             <i class="fa-solid fa-vial"></i> Тести та Карти
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-btn" data-tab="editor">
+                            <i class="fa-solid fa-pen-ruler"></i> Конструктор карт
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-btn" data-tab="submissions">
+                            <i class="fa-solid fa-square-poll-vertical"></i> Результати
                         </button>
                     </li>
                     <li class="nav-item">
@@ -340,6 +419,13 @@
                 </div>
 
                 <div class="data-card">
+                    <h3>Статистика проходжень</h3>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="analyticsChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="data-card">
                     <h3>Останні активності</h3>
                     <table>
                         <thead>
@@ -380,7 +466,7 @@
                             <label for="testMapUrl">URL інтерактивної карти / зображення</label>
                             <input type="url" id="testMapUrl" placeholder="https://example.com/map.jpg">
                         </div>
-                        <button type="submit" class="btn-primary">Додати тест</button>
+                        <button type="submit" class="btn-primary"><i class="fa-solid fa-plus"></i> Додати тест</button>
                     </form>
                 </div>
 
@@ -404,10 +490,60 @@
                 </div>
             </section>
 
-            <!-- TAB 3: Users Management -->
+            <!-- TAB 3: Map Editor -->
+            <section id="editor" class="tab-content">
+                <div class="data-card">
+                    <h3>Візуальний редактор точок та областей карты</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <input type="url" id="editorMapUrlInput" placeholder="Введіть URL зображення карти" style="flex: 1; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); color: white; border-radius: 6px;">
+                        <button id="loadMapToEditorBtn" class="btn-primary"><i class="fa-solid fa-download"></i> Завантажити карту</button>
+                    </div>
+
+                    <div class="editor-container">
+                        <div class="canvas-wrapper">
+                            <canvas id="mapEditorCanvas"></canvas>
+                        </div>
+                        <div class="editor-sidebar">
+                            <h4>Налаштування геометричних областей</h4>
+                            <p class="sub-text">Клацайте на карті для нанесення точок або багатокутників.</p>
+                            <ul class="shapes-list" id="mapShapesList">
+                                <li class="sub-text" style="text-align: center;">Області ще не додані</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: Submissions / Results -->
+            <section id="submissions" class="tab-content">
+                <div class="data-card">
+                    <h3>Результати та відповіді учнів</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Учень (Email)</th>
+                                <th>Назва тесту</th>
+                                <th>Оцінка</th>
+                                <th>Час виконання</th>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
+                        <tbody id="submissionsListTable">
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-sub);">Записи відсутні</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- TAB 5: Users Management -->
             <section id="users" class="tab-content">
                 <div class="data-card">
-                    <h3>Управління користувачами</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3>Управління користувачами</h3>
+                        <input type="text" id="userSearchInput" placeholder="Пошук за email..." style="padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: white; width: 250px;">
+                    </div>
                     <table>
                         <thead>
                             <tr>
@@ -426,7 +562,7 @@
                 </div>
             </section>
 
-            <!-- TAB 4: Settings -->
+            <!-- TAB 6: Settings -->
             <section id="settings" class="tab-content">
                 <div class="data-card">
                     <h3>Глобальні налаштування</h3>
@@ -441,7 +577,7 @@
                         </label>
                     </div>
 
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid var(--border-color);">
                         <div>
                             <strong>Дозволити нову реєстрацію</strong>
                             <div class="sub-text">Відкрити або закрити можливість створювати нові акаунти</div>
@@ -451,14 +587,21 @@
                             <span class="slider"></span>
                         </label>
                     </div>
+
+                    <h3 style="margin-top: 25px;">Резервне копіювання даних</h3>
+                    <div style="display: flex; gap: 15px; margin-top: 15px;">
+                        <button id="exportBackupBtn" class="btn-primary"><i class="fa-solid fa-file-export"></i> Експортувати дані (JSON)</button>
+                        <button id="importBackupBtn" class="btn-secondary"><i class="fa-solid fa-file-import"></i> Імпортувати дані</button>
+                        <input type="file" id="importBackupInput" accept=".json" style="display: none;">
+                    </div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- ВАЖЛИВО: Підключення скрипта адмінки як JS-модуля -->
-    <script type="module" src="admin.js"></script>
+    <!-- ВАЖЛИВО: Підключення всіх скриптів-модулів наприкінці body -->
     <script type="module" src="firebase-service.js"></script>
     <script type="module" src="script.js"></script>
+    <script type="module" src="admin.js"></script>
 </body>
 </html>
