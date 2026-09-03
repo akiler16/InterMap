@@ -75,12 +75,13 @@ function initAuthGuard() {
 
     if (isOwnerAuthorized !== 'true' && userRole !== 'admin') {
         showToast('Доступ заборонено! Необхідна авторизація адміністратора.', 'error');
+        // Затримка перед редіректом, щоб користувач побачив повідомлення
         setTimeout(() => { window.location.href = 'index.html'; }, 1500);
         return;
     }
 
     AdminState.currentUser = {
-        email: userEmail || 'vanyary16@gmail.com',
+        email: userEmail || 'admin@intermap.edu',
         role: userRole || 'admin'
     };
 
@@ -95,11 +96,12 @@ function initDatabase() {
     AdminState.users = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.USERS) || '[]');
     AdminState.submissions = JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEYS.SUBMISSIONS) || '[]');
 
+    // Додавання тестових даних, якщо база порожня
     if (AdminState.users.length === 0) {
         AdminState.users = [
             { id: 1, email: "vanyary16@gmail.com", role: "Owner", registeredAt: "2026-01-10", status: "Active" },
             { id: 2, email: "vanyarybalka13@gmail.com", role: "Owner", registeredAt: "2026-01-11", status: "Active" },
-            { id: 3, email: "student_test@intermap.edu", role: "Student", registeredAt: "2026-02-01", status: "Active" }
+            { id: 3, email: "student_test@intermap.edu", role: "student", registeredAt: "2026-02-01", status: "Active" }
         ];
         saveDatabase(CONFIG.STORAGE_KEYS.USERS, AdminState.users);
     }
@@ -141,10 +143,12 @@ function initTabNavigation() {
             if (pageTitle && titles[tab]) pageTitle.textContent = titles[tab];
             AdminState.activeTab = tab;
 
+            // Динамічне оновлення даних при перемиканні вкладок
             if (tab === 'dashboard') renderDashboard();
             if (tab === 'tests') renderTestsList();
             if (tab === 'users') renderUsersList();
             if (tab === 'submissions') renderSubmissionsList();
+            if (tab === 'editor') redrawMapCanvas();
         });
     });
 }
@@ -196,13 +200,14 @@ function renderAnalyticsChart() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Малювання швидкого чарту успішності (Native HTML5 Canvas)
-    const data = [65, 78, 90, 85, 92, 88, 95];
+    // Малювання швидкого графіку успішності (Native HTML5 Canvas)
+    const data = [65, 78, 90, 85, 92, 88, 95]; // Демонстраційні дані
     const labels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
     const padding = 40;
     const width = canvas.width - padding * 2;
     const height = canvas.height - padding * 2;
 
+    // Осі
     ctx.strokeStyle = '#334155';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -211,6 +216,7 @@ function renderAnalyticsChart() {
     ctx.lineTo(canvas.width - padding, canvas.height - padding);
     ctx.stroke();
 
+    // Графік
     ctx.strokeStyle = '#3b82f6';
     ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
     ctx.lineWidth = 3;
@@ -224,6 +230,7 @@ function renderAnalyticsChart() {
         else ctx.lineTo(x, y);
 
         ctx.fillStyle = '#f8fafc';
+        ctx.font = '12px Segoe UI';
         ctx.fillText(labels[idx], x - 8, canvas.height - 15);
     });
 
@@ -237,18 +244,30 @@ function initMapEditorCanvas() {
     const canvas = document.getElementById('mapEditorCanvas');
     if (!canvas) return;
 
+    // Встановлення фізичних розмірів canvas для чіткості
+    const updateCanvasSize = () => {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        redrawMapCanvas();
+    };
+    updateCanvasSize();
+    window.addEventListener('resize', updateCanvasSize);
+
     AdminState.mapEditor.canvas = canvas;
     AdminState.mapEditor.ctx = canvas.getContext('2d');
 
     // Кнопки інструментів редактора
     const toolBtns = document.querySelectorAll('.tool-btn');
-    toolBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            toolBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            AdminState.mapEditor.activeTool = btn.getAttribute('data-tool');
+    if (toolBtns.length > 0) {
+        toolBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                toolBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                AdminState.mapEditor.activeTool = btn.getAttribute('data-tool');
+            });
         });
-    });
+    }
 
     // Завантаження зображення карти
     const mapUrlInput = document.getElementById('editorMapUrlInput');
@@ -265,9 +284,8 @@ function initMapEditorCanvas() {
     canvas.addEventListener('mousedown', handleCanvasMouseDown);
     canvas.addEventListener('mousemove', handleCanvasMouseMove);
     canvas.addEventListener('mouseup', handleCanvasMouseUp);
+    canvas.addEventListener('mouseleave', handleCanvasMouseUp);
     canvas.addEventListener('wheel', handleCanvasWheel);
-
-    // Завершення створення полігона за подвійним кліком
     canvas.addEventListener('dblclick', finalizePolygonShape);
 }
 
@@ -284,7 +302,7 @@ function loadMapImageIntoEditor(url) {
         showToast('Карту успішно завантажено в редактор', 'success');
     };
     img.onerror = () => {
-        showToast('Помилка завантаження зображення. Перевірте URL або CORS.', 'error');
+        showToast('Помилка завантаження зображення. Перевірте посилання.', 'error');
     };
 }
 
@@ -310,7 +328,7 @@ function redrawMapCanvas() {
         ctx.fillText('Завантажте карту для початку розмітки об\'єктів', canvas.width / 2 - 180, canvas.height / 2);
     }
 
-    // Малювання вже збережених фігур
+    // Малювання збережених фігур
     shapes.forEach((shape) => {
         ctx.beginPath();
         ctx.strokeStyle = shape.color || '#3b82f6';
@@ -335,7 +353,7 @@ function redrawMapCanvas() {
         // Мітка фігури
         if (shape.label && shape.points.length > 0) {
             ctx.fillStyle = '#ffffff';
-            ctx.font = `${12 / zoom}px Segoe UI`;
+            ctx.font = `${14 / zoom}px Segoe UI`;
             ctx.fillText(shape.label, shape.points[0].x + 10, shape.points[0].y - 5);
         }
     });
@@ -350,7 +368,7 @@ function redrawMapCanvas() {
             else ctx.lineTo(pt.x, pt.y);
 
             // Точка вузла
-            ctx.arc(pt.x, pt.y, 3 / zoom, 0, Math.PI * 2);
+            ctx.arc(pt.x, pt.y, 4 / zoom, 0, Math.PI * 2);
         });
         ctx.stroke();
     }
@@ -374,7 +392,8 @@ function handleCanvasMouseDown(e) {
     const editor = AdminState.mapEditor;
     const coords = getCanvasCoordinates(e);
 
-    if (editor.activeTool === 'pan') {
+    // У цьому спрощеному редакторі, якщо ми не вибрали інший інструмент, малюємо багатокутник за замовчуванням
+    if (editor.activeTool === 'pan' || e.button === 1 || e.shiftKey) {
         editor.isPanning = true;
         editor.startPanX = e.clientX - editor.panX;
         editor.startPanY = e.clientY - editor.panY;
@@ -394,7 +413,8 @@ function handleCanvasMouseDown(e) {
             redrawMapCanvas();
             renderShapesList();
         }
-    } else if (editor.activeTool === 'polygon') {
+    } else {
+        // Режим полігона (багатокутника)
         editor.currentPoints.push(coords);
         redrawMapCanvas();
     }
@@ -419,16 +439,17 @@ function handleCanvasWheel(e) {
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
     
     const newZoom = editor.zoom * zoomFactor;
-    if (newZoom >= 0.5 && newZoom <= 5) {
+    if (newZoom >= 0.2 && newZoom <= 5) {
         editor.zoom = newZoom;
         redrawMapCanvas();
     }
 }
 
-function finalizePolygonShape() {
+function finalizePolygonShape(e) {
+    e.preventDefault();
     const editor = AdminState.mapEditor;
-    if (editor.activeTool === 'polygon' && editor.currentPoints.length >= 3) {
-        const label = prompt('Введіть назву створеної області (наприклад: "Область 1"):');
+    if (editor.currentPoints.length >= 3) {
+        const label = prompt('Введіть назву створеної області (наприклад: "Волинська область"):');
         if (label) {
             editor.shapes.push({
                 id: Date.now(),
@@ -449,23 +470,24 @@ function renderShapesList() {
     if (!listContainer) return;
 
     if (AdminState.mapEditor.shapes.length === 0) {
-        listContainer.innerHTML = '<div style="color: var(--text-sub); text-align: center;">Немає розмічених областей</div>';
+        listContainer.innerHTML = '<div class="sub-text" style="text-align: center;">Області ще не додані</div>';
         return;
     }
 
     listContainer.innerHTML = AdminState.mapEditor.shapes.map(s => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding: 8px; margin-bottom:6px; background: var(--bg-primary); border-radius:6px; border-left: 4px solid ${s.color};">
+        <div class="shape-item" style="border-left: 4px solid ${s.color};">
             <div>
                 <strong>${escapeHtml(s.label)}</strong> 
-                <span style="font-size:0.8rem; color:var(--text-sub);">(${s.type})</span>
+                <span class="sub-text">(${s.type === 'polygon' ? 'Область' : 'Точка'})</span>
             </div>
-            <button onclick="removeShape(${s.id})" style="background:none; border:none; color:var(--danger-color); cursor:pointer;">
+            <button onclick="removeShape(${s.id})" style="background:none; border:none; color:var(--danger-color); cursor:pointer;" title="Видалити">
                 <i class="fa-solid fa-trash"></i>
             </button>
         </div>
     `).join('');
 }
 
+// Глобальна функція для видалення фігури (працює при type="module")
 window.removeShape = function(shapeId) {
     AdminState.mapEditor.shapes = AdminState.mapEditor.shapes.filter(s => s.id !== shapeId);
     redrawMapCanvas();
@@ -497,7 +519,7 @@ function handleTestCreation() {
         title: titleInput.value.trim(),
         category: categorySelect.value,
         mapUrl: mapUrlInput ? mapUrlInput.value.trim() : '',
-        shapes: [...AdminState.mapEditor.shapes], // Збережені інтерактивні області
+        shapes: [...AdminState.mapEditor.shapes], // Збережені області з редактора
         questions: [],
         createdAt: new Date().toISOString().split('T')[0]
     };
@@ -521,7 +543,7 @@ function renderTestsList() {
     if (!tbody) return;
 
     if (AdminState.tests.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--text-sub);">Тестів немає. Створіть перший тест!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--text-sub);">Тестів немає. Створіть перший тест!</td></tr>`;
         return;
     }
 
@@ -530,10 +552,9 @@ function renderTestsList() {
             <td>${test.id}</td>
             <td><strong>${escapeHtml(test.title)}</strong></td>
             <td>${escapeHtml(test.category)}</td>
-            <td>${test.shapes ? test.shapes.length : 0} областей</td>
             <td>
-                <button onclick="editTestQuestions(${test.id})" class="btn-primary" style="padding:4px 8px; font-size:0.85rem;">Питання</button>
-                <button onclick="deleteTest(${test.id})" style="background:var(--danger-color); color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">
+                <button onclick="editTestQuestions(${test.id})" class="btn-primary" style="padding:6px 12px; font-size:0.85rem;">Питання</button>
+                <button onclick="deleteTest(${test.id})" style="background:var(--danger-color); color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; margin-left:5px;">
                     <i class="fa-solid fa-trash"></i>
                 </button>
             </td>
@@ -578,18 +599,6 @@ function initUserManagement() {
     }
 }
 
-// ==========================================
-// 7. УПРАВЛІННЯ КОРИСТУВАЧАМИ ТА РОЛЯМИ
-// ==========================================
-function initUserManagement() {
-    const searchInput = document.getElementById('userSearchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            renderUsersList(e.target.value.toLowerCase());
-        });
-    }
-}
-
 function renderUsersList(filterText = '') {
     const tbody = document.getElementById('usersListTable');
     if (!tbody) return;
@@ -600,7 +609,7 @@ function renderUsersList(filterText = '') {
     );
 
     if (filteredUsers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--text-sub);">Користувачів не знайдено</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--text-sub);">Користувачів не знайдено</td></tr>`;
         return;
     }
 
@@ -608,35 +617,33 @@ function renderUsersList(filterText = '') {
         <tr>
             <td><strong>${escapeHtml(user.email)}</strong></td>
             <td>
-                ${user.role === 'Owner' ? `
+                ${user.role === 'Owner' || CONFIG.OWNER_EMAILS.includes(user.email) ? `
                     <span style="padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; background: rgba(59,130,246,0.2); color: #3b82f6; font-weight: bold;">
                         Власник (Owner)
                     </span>
                 ` : `
                     <select onchange="changeUserRole(${user.id}, this.value)" style="background: var(--bg-primary); color: var(--text-main); border: 1px solid var(--border-color); padding: 5px 10px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">
-                        <option value="admin" ${user.role === 'admin' || user.role === 'Admin' ? 'selected' : ''}>👑 Адмін</option>
-                        <option value="teacher" ${user.role === 'teacher' || user.role === 'Teacher' ? 'selected' : ''}>👨‍🏫 Учитель</option>
-                        <option value="student" ${user.role === 'student' || user.role === 'Student' ? 'selected' : ''}>🎓 Студент</option>
+                        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>👑 Адмін</option>
+                        <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>👨‍🏫 Учитель</option>
+                        <option value="student" ${user.role === 'student' ? 'selected' : ''}>🎓 Студент</option>
                     </select>
                 `}
             </td>
             <td>${user.registeredAt || '2026-01-01'}</td>
-            <td><span style="color: ${user.status === 'Blocked' ? 'var(--danger-color)' : 'var(--success-color)'}">${user.status || 'Active'}</span></td>
             <td>
-                ${user.role !== 'Owner' ? `
-                    <button onclick="toggleUserStatus(${user.id})" style="background:var(--border-color); color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">
+                ${user.role !== 'Owner' && !CONFIG.OWNER_EMAILS.includes(user.email) ? `
+                    <button onclick="toggleUserStatus(${user.id})" style="background:var(--border-color); color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">
                         ${user.status === 'Blocked' ? 'Розблокувати' : 'Заблокувати'}
                     </button>
-                    <button onclick="deleteUser(${user.id})" style="background:var(--danger-color); color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-left:4px;">
+                    <button onclick="deleteUser(${user.id})" style="background:var(--danger-color); color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; margin-left:5px;">
                         <i class="fa-solid fa-user-xmark"></i>
                     </button>
-                ` : '<span style="color:var(--text-sub)">Доступ захищено</span>'}
+                ` : '<span class="sub-text">Системний акаунт</span>'}
             </td>
         </tr>
     `).join('');
 }
 
-// Глобальна функція зміни ролі користувача
 window.changeUserRole = function(userId, newRole) {
     const user = AdminState.users.find(u => u.id === userId);
     if (!user) return;
@@ -659,7 +666,7 @@ window.toggleUserStatus = function(userId) {
     user.status = user.status === 'Blocked' ? 'Active' : 'Blocked';
     saveDatabase(CONFIG.STORAGE_KEYS.USERS, AdminState.users);
     renderUsersList();
-    showToast(`Статус користувача ${user.email} змінено.`, 'info');
+    showToast(`Статус користувача ${user.email} оновлено.`, 'info');
 };
 
 window.deleteUser = function(userId) {
@@ -692,10 +699,10 @@ function renderSubmissionsList() {
             <td>${escapeHtml(sub.userEmail)}</td>
             <td>${escapeHtml(sub.testTitle)}</td>
             <td><strong>${sub.score}%</strong></td>
-            <td>${sub.date || 'Невідомо'}</td>
+            <td>${sub.duration || '2 хв'}</td>
             <td>
-                <button onclick="inspectSubmission(${idx})" class="btn-primary" style="padding: 4px 8px; font-size: 0.8rem;">
-                    <i class="fa-solid fa-eye"></i> Перевірити карту
+                <button onclick="inspectSubmission(${idx})" class="btn-primary" style="padding: 6px 10px; font-size: 0.85rem;">
+                    <i class="fa-solid fa-eye"></i> Деталі
                 </button>
             </td>
         </tr>
@@ -706,7 +713,7 @@ window.inspectSubmission = function(index) {
     const sub = AdminState.submissions[index];
     if (!sub) return;
 
-    alert(`Перегляд проходження користувача ${sub.userEmail}\nРезультат: ${sub.score}%\nЧас виконання: ${sub.duration || '2 хв'}`);
+    alert(`Деталі проходження:\nУчень: ${sub.userEmail}\nТест: ${sub.testTitle}\nОцінка: ${sub.score}%\nЧас виконання: ${sub.duration || 'Невідомо'}\nДата: ${sub.date || new Date().toLocaleDateString()}`);
 };
 
 // ==========================================
@@ -764,6 +771,9 @@ function importFullBackup(e) {
                 saveDatabase(CONFIG.STORAGE_KEYS.SUBMISSIONS, AdminState.submissions);
 
                 renderDashboard();
+                renderTestsList();
+                renderUsersList();
+                renderSubmissionsList();
                 showToast('Дані успішно відновлено з файлу!', 'success');
             } else {
                 showToast('Некоректний формат файлу резервної копії.', 'error');
@@ -773,6 +783,8 @@ function importFullBackup(e) {
         }
     };
     reader.readAsText(file);
+    // Очищаємо інпут, щоб можна було завантажити той самий файл повторно
+    e.target.value = '';
 }
 
 // ==========================================
@@ -832,7 +844,7 @@ document.getElementById('logoutBtn')?.addEventListener('click', async () => {
     if (confirm('Ви дійсно бажаєте вийти з акаунта?')) {
         try {
             // Якщо підключений модуль Firebase Auth
-            if (window.FirebaseAuthModule) {
+            if (window.FirebaseAuthModule && typeof window.FirebaseAuthModule.logout === 'function') {
                 await window.FirebaseAuthModule.logout();
             } else {
                 // Очищення локального сховища
