@@ -162,6 +162,25 @@
 
         .btn-admin:hover { background-color: #1e293b; }
 
+        .btn-logout {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background-color: #ef4444;
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-logout:hover {
+            background-color: #dc2626;
+        }
+        
         .code-input-group {
             width: 100%;
             display: flex;
@@ -235,6 +254,10 @@
                     <button id="btnRegister" class="btn btn-student" style="padding:8px;">Зареєструватися</button>
                 </div>
                 <button id="btnGoogle" class="btn btn-google" style="padding:8px;">Увійти через Google</button>
+<!-- Кнопка виходу (за замовчуванням прихована) -->
+                <button id="logoutBtn" class="btn-logout" style="display: none;">
+                 <i class="fa-solid fa-right-from-bracket"></i> Вийти
+                </button>
             </div>
         </div>
 
