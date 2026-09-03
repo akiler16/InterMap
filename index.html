@@ -362,24 +362,30 @@
         }
 
         // Авторизація адміна через потрійний ключ
-        async function verifyTripleAuth() {
-            const pass = document.getElementById('admPass').value.trim();
-            const tg = document.getElementById('admTg').value.trim();
-            const google = document.getElementById('admGoogle').value.trim();
+        // Авторизація адміна через потрійний ключ
+async function verifyTripleAuth() {
+    const pass = document.getElementById('admPass').value.trim();
+    const tg = document.getElementById('admTg').value.trim();
+    const google = document.getElementById('admGoogle').value.trim();
 
-            try {
-                const authSnap = await get(ref(db, 'auth'));
-                const correctAdminPass = authSnap.exists() ? authSnap.val().adminPassword : 'admin16';
+    try {
+        const authSnap = await get(ref(db, 'auth'));
+        const correctAdminPass = authSnap.exists() ? authSnap.val().adminPassword : 'admin16';
 
-                if (pass === correctAdminPass && tg === '@IvanIntermap' && google === 'G-161013') {
-                    window.location.href = 'admin.html';
-                } else {
-                    alert('❌ Помилка автентифікації! Невірні дані.');
-                }
-            } catch (err) {
-                alert("Помилка зв'язку з БД: " + err.message);
-            }
+        if (pass === correctAdminPass && tg === '@IvanIntermap' && google === 'G-161013') {
+            // ОБО'ЯЗКОВО ЗБЕРІГАЄМО АВТОРИЗАЦІЮ
+            localStorage.setItem('isOwnerAuthorized', 'true');
+            localStorage.setItem('userRole', 'admin');
+            localStorage.setItem('userEmail', 'vanyary16@gmail.com');
+
+            window.location.href = 'admin.html';
+        } else {
+            alert('❌ Помилка автентифікації! Невірні дані.');
         }
+    } catch (err) {
+        alert("Помилка зв'язку з БД: " + err.message);
+    }
+}
 
         // Прив'язка подій після завантаження DOM
         document.addEventListener('DOMContentLoaded', () => {
