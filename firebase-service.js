@@ -37,9 +37,10 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getDatabase(app);
 
+setPersistence(auth, browserLocalPersistence);
+
 const OWNER_EMAILS = [
     "vanyary16@gmail.com",
-    "vanyarybalka13@gmail.com"
 ];
 
 function safeToast(msg, type) {
