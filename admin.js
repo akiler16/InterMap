@@ -789,3 +789,25 @@ function hexToRgba(hex, alpha = 1) {
     const num = parseInt(c, 16);
     return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
 }
+
+// Логіка кнопки "Вийти"
+document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    if (confirm('Ви дійсно бажаєте вийти з акаунта?')) {
+        try {
+            // Якщо підключений модуль Firebase Auth
+            if (window.FirebaseAuthModule) {
+                await window.FirebaseAuthModule.logout();
+            } else {
+                // Очищення локального сховища
+                localStorage.removeItem('isOwnerAuthorized');
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('userEmail');
+            }
+        } catch (error) {
+            console.error('Помилка при виході:', error);
+        } finally {
+            // Перенаправлення на головну сторінку
+            window.location.href = 'index.html';
+        }
+    }
+});
