@@ -185,19 +185,15 @@ window.FirebaseDB = FirebaseDB;
 // ==========================================
 
 onAuthStateChanged(auth, async (user) => {
-    if (!window.IntermapState) {
-        window.IntermapState = {};
-    }
+    window.IntermapState = window.IntermapState || {};
 
     if (user) {
         const dbRef = ref(db);
         let userData = { email: user.email, role: 'student' };
         try {
             const snapshot = await get(child(dbRef, `users/${user.uid}`));
-            if (snapshot.exists()) {
-                userData = snapshot.val();
-            }
-        } catch(e) {
+            if (snapshot.exists()) userData = snapshot.val();
+        } catch (e) {
             console.error(e);
         }
 
@@ -213,9 +209,5 @@ onAuthStateChanged(auth, async (user) => {
         localStorage.removeItem('isOwnerAuthorized');
         localStorage.removeItem('userRole');
         localStorage.removeItem('userEmail');
-    }
-
-    if (window.IntermapEngine && window.IntermapEngine.updateUserInterface) {
-        window.IntermapEngine.updateUserInterface();
     }
 });
