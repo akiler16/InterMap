@@ -37,6 +37,10 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getDatabase(app);
 
+// Зберігаємо посилання на auth та db у глобальному вікні
+window.firebaseAuth = auth;
+window.firebaseDb = db;
+
 setPersistence(auth, browserLocalPersistence);
 
 const OWNER_EMAILS = [

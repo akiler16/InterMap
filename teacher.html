@@ -383,7 +383,6 @@
             const guestNotice = document.getElementById('guestNotice');
 
             if (user) {
-                // Перевіряємо роль у БД
                 const userRef = ref(db, `users/${user.uid}`);
                 const snap = await get(userRef);
                 
@@ -391,7 +390,6 @@
                 if (snap.exists()) {
                     role = snap.val().role || "teacher";
                 } else {
-                    // Якщо нового користувача створено, записуємо роль вчителя за замовчуванням
                     await set(userRef, { email: user.email, role: "teacher" });
                 }
 
@@ -457,8 +455,8 @@
         };
     </script>
 
-    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (Малювання карт, завдання, збереження) -->
-    <script type="module" src="script.js"></script>
+    <!-- ГОЛОВНИЙ СКРИПТ ЛОГІКИ (Завантажується як класичний JS) -->
+    <script src="script.js"></script>
     <script type="module" src="firebase-service.js"></script>
     <script type="module" src="teacher.js"></script>
 </body>
